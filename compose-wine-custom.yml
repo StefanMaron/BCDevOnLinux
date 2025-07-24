@@ -12,8 +12,7 @@ services:
       - SA_PASSWORD=${SA_PASSWORD:-P@ssw0rd123!}
       - SQL_SERVER=sql
       - SQL_SERVER_PORT=1433
-      - BC_AUTOSTART=false
-      - WINEDEBUG=-all  # Reduce Wine debug output (set to +all for debugging)
+      - BC_AUTOSTART=true
     ports:
       - "7046:7046"  # BC OData
       - "7047:7047"  # BC SOAP

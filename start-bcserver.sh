@@ -65,8 +65,18 @@ if [ -f "/home/CustomSettings.config" ]; then
     # Copy the template and substitute the SA_PASSWORD placeholder
     sed "s/\${SA_PASSWORD}/$SA_PASSWORD/g" /home/CustomSettings.config > /home/bcserver/CustomSettings.config
     echo "CustomSettings.config created with substituted password"
+    
+    # Also copy to the BC Server directory to override the default
+    cp /home/bcserver/CustomSettings.config "$BCSERVER_DIR/CustomSettings.config"
+    echo "Copied CustomSettings.config to BC Server directory"
 else
     echo "WARNING: CustomSettings.config template not found at /home/CustomSettings.config"
+    # Remove the problematic UnsupportedLanguageIds from the default config
+    if [ -f "$BCSERVER_DIR/CustomSettings.config" ]; then
+        echo "Fixing default CustomSettings.config..."
+        sed -i '/<add key="UnsupportedLanguageIds"/d' "$BCSERVER_DIR/CustomSettings.config"
+        echo "Removed UnsupportedLanguageIds from default config"
+    fi
 fi
 
 # Copy configuration and key files to Wine prefix (BC4Ubuntu approach)
@@ -86,6 +96,23 @@ fi
 # Start BC Server with Wine (BC4Ubuntu approach)
 echo "Starting BC Server with Wine..."
 cd "$BCSERVER_DIR"
+
+# Ensure our config is being used - remove the problematic entries from default config
+if [ -f "CustomSettings.config" ]; then
+    echo "Fixing BC Server default config..."
+    # Remove the problematic UnsupportedLanguageIds entry
+    sed -i '/<add key="UnsupportedLanguageIds"/d' CustomSettings.config
+    # Update language settings to use culture names instead of LCIDs
+    sed -i 's/<add key="DefaultLanguage" value="1033"/<add key="DefaultLanguage" value="en-US"/' CustomSettings.config
+    sed -i 's/<add key="SupportedLanguages" value="1033"/<add key="SupportedLanguages" value="en-US"/' CustomSettings.config
+    # Ensure ServicesLanguage is set
+    if ! grep -q "ServicesLanguage" CustomSettings.config; then
+        sed -i '/<add key="DefaultLanguage"/a\  <add key="ServicesLanguage" value="en-US" \/>' CustomSettings.config
+    else
+        sed -i 's/<add key="ServicesLanguage" value=""/<add key="ServicesLanguage" value="en-US"/' CustomSettings.config
+    fi
+    echo "BC Server config fixed"
+fi
 
 # Check if BC Server requires .NET 8.0 by looking at the runtime config
 if [ -f "Microsoft.Dynamics.Nav.Server.runtimeconfig.json" ]; then
