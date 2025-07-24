@@ -4,6 +4,11 @@ set -e
 
 echo "Initializing Wine environment using BC4Ubuntu approach..."
 
+# Ensure en_US.UTF-8 locale is generated
+echo "Generating en_US.UTF-8 locale..."
+locale-gen en_US.UTF-8 || echo "locale-gen failed, continuing..."
+update-locale LANG=en_US.UTF-8 || echo "update-locale failed, continuing..."
+
 # Wine environment variables following BC4Ubuntu
 export WINEPREFIX="$HOME/.local/share/wineprefixes/bc1"
 export WINEARCH=win64
@@ -19,7 +24,7 @@ export DISPLAY=":0"
 
 # Create Wine prefix directory
 echo "Creating Wine prefix directory..."
-# mkdir -p "$WINEPREFIX"
+mkdir -p "$WINEPREFIX"
 
 
 # # Initialize Wine prefix - this is the key step from BC4Ubuntu
@@ -73,10 +78,6 @@ rm -f "/tmp/${ASPNET_INSTALLER}"
 
 echo "ASP.NET Core Runtime 8.0.18 installation completed"
 
-# Following BC4Ubuntu approach - install .NET Framework 4.8 first
-echo "Installing .NET Framework 4.8 (following BC4Ubuntu approach)..."
-winetricks prefix=bc1 -q dotnet48
-
 # Set Windows version to Windows 10 for better compatibility
 echo "Setting Windows version to Windows 10..."
 WINEPREFIX="$WINEPREFIX" wine reg add "HKEY_CURRENT_USER\\Software\\Wine" /v "Version" /t REG_SZ /d "win10" /f
@@ -100,3 +101,9 @@ echo "Verifying .NET installation..."
 WINEPREFIX="$WINEPREFIX" wine cmd /c "dotnet --version" || echo "Note: .NET CLI may not be available through Wine"
 
 echo "Wine initialization completed successfully. Virtual display was used only during ASP.NET installation."
+
+# Apply Wine culture fixes if the script exists
+if [ -f "/home/fix-wine-cultures.sh" ]; then
+    echo "Applying Wine culture fixes..."
+    /home/fix-wine-cultures.sh
+fi
