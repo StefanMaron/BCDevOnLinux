@@ -241,8 +241,18 @@ RUN Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; \
 # Download BC artifacts (version 26 as per your current setup)
 RUN $artifactUrl = Get-BCartifactUrl -version 26 -country w1 -type Sandbox; \
     $artifactPaths = Download-Artifacts $artifactUrl -includePlatform; \
-    $versionFolder = Split-Path $artifactPaths[0] -Parent; \
-    Copy-Item -Path "$versionFolder/*" -Destination "/home/bcartifacts" -Recurse -Force
+    Write-Host "Artifact paths received:"; \
+    $artifactPaths | ForEach-Object { Write-Host "  $_" }; \
+    Write-Host "Contents of application artifacts ($($artifactPaths[0])):"; \
+    Get-ChildItem "$($artifactPaths[0])" | ForEach-Object { Write-Host "  $($_.Name)" }; \
+    Write-Host "Contents of platform artifacts ($($artifactPaths[1])):"; \
+    Get-ChildItem "$($artifactPaths[1])" | ForEach-Object { Write-Host "  $($_.Name)" }; \
+    Write-Host "Copying platform artifacts first from: $($artifactPaths[1])"; \
+    Copy-Item -Path "$($artifactPaths[1])/*" -Destination "/home/bcartifacts" -Recurse -Force; \
+    Write-Host "Copying application artifacts second from: $($artifactPaths[0])"; \
+    Copy-Item -Path "$($artifactPaths[0])/*" -Destination "/home/bcartifacts" -Recurse -Force; \
+    Write-Host "Final artifact structure:"; \
+    Get-ChildItem "/home/bcartifacts" -Recurse -Depth 1 | Select-Object FullName | ForEach-Object { Write-Host "  $($_.FullName)" }
 
 # Switch back to bash
 SHELL ["/bin/bash", "-c"]

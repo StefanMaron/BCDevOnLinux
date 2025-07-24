@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: dockerfile
+      args:
+        - BC_ARTIFACT_URL=${BC_ARTIFACT_URL:-}
     depends_on:
       sql:
         condition: service_healthy
@@ -11,6 +13,7 @@ services:
       - SQL_SERVER=sql
       - SQL_SERVER_PORT=1433
       - BC_AUTOSTART=false
+      - BC_ARTIFACT_URL=${BC_ARTIFACT_URL:-}
     ports:
       - "7046:7046"  # BC OData
       - "7047:7047"  # BC SOAP

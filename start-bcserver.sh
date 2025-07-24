@@ -126,10 +126,31 @@ if [ -f "Microsoft.Dynamics.Nav.Server.runtimeconfig.json" ]; then
 fi
 
 # Use the BC4Ubuntu command structure
-WINEPREFIX="$WINEPREFIX" wine "$BCSERVER_PATH" /console
+# WINEPREFIX="$WINEPREFIX" wine "$BCSERVER_PATH" /console
 
-# Create database
-/opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "CREATE DATABASE [CRONUS];" -C -N 2>/dev/null || true
+# Find any database backup file and restore
+DB_BAK=$(find /home/bcartifacts -name "*.bak" -type f | head -1)
+if [ -z "$DB_BAK" ]; then
+    echo "WARNING: No database backup file found in /home/bcartifacts"
+    echo "Creating empty CRONUS database instead..."
+    /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "CREATE DATABASE [CRONUS];" -C -N 2>/dev/null || true
+else
+    echo "Found database backup at: $DB_BAK"
+    echo "Restoring CRONUS database from backup..."
+    
+    # First, drop the database if it exists
+    /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "IF DB_ID('CRONUS') IS NOT NULL DROP DATABASE [CRONUS];" -C -N 2>/dev/null || true
+    
+    # Restore the database from backup
+    /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "RESTORE DATABASE [CRONUS] FROM DISK = '$DB_BAK' WITH REPLACE;" -C -N 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        echo "CRONUS database restored successfully from $DB_BAK"
+    else
+        echo "ERROR: Failed to restore CRONUS database from $DB_BAK, creating empty database instead..."
+        /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "CREATE DATABASE [CRONUS];" -C -N 2>/dev/null || true
+    fi
+fi
 
 # Setup encryption key and config (same as above)
 [ ! -f "/home/bcserver/Keys/BC210.key" ] && pwsh /home/create-encryption-key.ps1
@@ -154,5 +175,8 @@ fi
 BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
 cd "$BCSERVER_DIR"
 echo "Starting BC Server with Wine..."
+
 exec wine "$BCSERVER_PATH" /console
+
+
 

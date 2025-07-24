@@ -51,15 +51,26 @@ RUN mkdir -p /home/bcartifacts /home/bcserver/Keys
 # Set shell to PowerShell for BC Container Helper installation
 SHELL ["pwsh", "-Command"]
 
-# Install BC Container Helper
-RUN Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; \
-    Install-Module -Name BcContainerHelper -Force -AllowClobber -Scope AllUsers
+# Add build argument for BC artifact URL
+ARG BC_ARTIFACT_URL=""
 
-# Download BC artifacts
-RUN $artifactUrl = Get-BCartifactUrl -version 26 -country w1 -type Sandbox; \
-    $artifactPaths = Download-Artifacts $artifactUrl -includePlatform; \
-    $versionFolder = Split-Path $artifactPaths[0] -Parent; \
-    Copy-Item -Path "$versionFolder/*" -Destination "/home/bcartifacts" -Recurse -Force
+# Set as environment variable for use in RUN commands
+ENV BC_ARTIFACT_URL=${BC_ARTIFACT_URL}
+
+# Copy optimized download script
+COPY download-bc-artifacts.ps1 /home/
+
+# Download BC artifacts using optimized script
+RUN Write-Host "BC_ARTIFACT_URL value: '$env:BC_ARTIFACT_URL'"; \
+    if ([string]::IsNullOrEmpty($env:BC_ARTIFACT_URL) -or $env:BC_ARTIFACT_URL -eq '') { \
+        Write-Host "No BC_ARTIFACT_URL provided, using default BC 26 Sandbox W1..."; \
+        $artifactUrl = 'https://bcartifacts.azureedge.net/sandbox/26.0/w1'; \
+    } else { \
+        Write-Host "Using provided BC_ARTIFACT_URL: $env:BC_ARTIFACT_URL"; \
+        $artifactUrl = $env:BC_ARTIFACT_URL; \
+    }; \
+    Write-Host "Final artifact URL: $artifactUrl"; \
+    & /home/download-bc-artifacts.ps1 -ArtifactUrl $artifactUrl -IncludePlatform -DestinationPath '/home/bcartifacts' -Force
 
 # Copy scripts and configuration files and make them executable
 COPY *.ps1 /home/

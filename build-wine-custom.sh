@@ -21,6 +21,7 @@ fi
 # Parse command line arguments
 BUILD_ONLY=false
 NO_CACHE=false
+REBUILD_BC_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -32,13 +33,18 @@ while [[ $# -gt 0 ]]; do
             NO_CACHE=true
             shift
             ;;
+        --rebuild-bc-only)
+            REBUILD_BC_ONLY=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --build-only    Only build the image, don't start containers"
-            echo "  --no-cache      Build without using Docker cache"
-            echo "  --help          Show this help message"
+            echo "  --build-only      Only build the image, don't start containers"
+            echo "  --no-cache        Build without using Docker cache"
+            echo "  --rebuild-bc-only Rebuild only the BC stage (keeps Wine cache)"
+            echo "  --help            Show this help message"
             exit 0
             ;;
         *)
@@ -53,10 +59,19 @@ BUILD_CMD="docker compose -f compose-wine-custom.yml build"
 
 if [ "$NO_CACHE" = true ]; then
     BUILD_CMD="$BUILD_CMD --no-cache"
+elif [ "$REBUILD_BC_ONLY" = true ]; then
+    # Force rebuild of BC stage while keeping Wine builder cache
+    echo -e "${YELLOW}Rebuilding only the BC stage (keeping Wine cache)...${NC}"
+    BUILD_CMD="$BUILD_CMD --no-cache bc"
 fi
 
-echo -e "${YELLOW}Starting Docker build...${NC}"
-echo -e "${YELLOW}Note: Wine compilation will take 20-30 minutes on first build${NC}"
+if [ "$REBUILD_BC_ONLY" = true ]; then
+    echo -e "${YELLOW}Starting Docker build (BC stage only)...${NC}"
+    echo -e "${YELLOW}This will reuse the cached Wine build from the first stage${NC}"
+else
+    echo -e "${YELLOW}Starting Docker build...${NC}"
+    echo -e "${YELLOW}Note: Wine compilation will take 20-30 minutes on first build${NC}"
+fi
 
 # Execute build
 $BUILD_CMD
