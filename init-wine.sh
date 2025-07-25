@@ -38,8 +38,20 @@ winecfg /v win11
 # echo "Installing .NET Desktop Runtime 6.0..."
 # winetricks prefix=bc1 -q dotnetdesktop6
 
-# Now install .NET 8.0 runtime and ASP.NET Core 8.0 which BC Server v26 needs
-echo "Installing .NET 8.0 runtime for BC Server v26..."
+# Start virtual display for .NET installation
+echo "Starting virtual display for .NET installation..."
+# Clean up any stale lock files first
+rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
+Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX &
+XVFB_PID=$!
+sleep 3
+
+# Install .NET Desktop Runtime 8.0 via winetricks (BC Server v26 needs this)
+echo "Installing .NET Desktop Runtime 8.0 via winetricks..."
+winetricks prefix=bc1 -q dotnetdesktop8
+
+# Now install ASP.NET Core 8.0 hosting bundle which BC Server v26 also needs
+echo "Installing ASP.NET Core 8.0 hosting bundle for BC Server v26..."
 cd /tmp
 
 # Download and install ASP.NET Core Runtime 8.0.18 directly from Microsoft
@@ -56,22 +68,10 @@ wget -O "/tmp/${ASPNET_INSTALLER}" "${ASPNET_URL}" || {
 
 echo "Installing ASP.NET Core Runtime 8.0.18 via Wine..."
 
-# Start virtual display for the installer
-echo "Starting virtual display for ASP.NET installer..."
-# Clean up any stale lock files first
-rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
-Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX &
-XVFB_PID=$!
-sleep 3
-
 # Run the installer
 WINEPREFIX="$WINEPREFIX" wine "/tmp/${ASPNET_INSTALLER}" /quiet /install /norestart
 
-# Stop virtual display
-echo "Stopping virtual display..."
-kill $XVFB_PID 2>/dev/null || true
-# Clean up display files
-rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
+# Stop virtual display (moved to end of script)
 
 # Clean up the installer
 rm -f "/tmp/${ASPNET_INSTALLER}"
@@ -100,7 +100,13 @@ echo "Wine prefix location: $WINEPREFIX"
 echo "Verifying .NET installation..."
 WINEPREFIX="$WINEPREFIX" wine cmd /c "dotnet --version" || echo "Note: .NET CLI may not be available through Wine"
 
-echo "Wine initialization completed successfully. Virtual display was used only during ASP.NET installation."
+echo "Wine initialization completed successfully."
+
+# Stop virtual display
+echo "Stopping virtual display..."
+kill $XVFB_PID 2>/dev/null || true
+# Clean up display files
+rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
 
 # Apply Wine culture fixes if the script exists
 if [ -f "/home/fix-wine-cultures.sh" ]; then

@@ -1,0 +1,34 @@
+--- a/dlls/kernelbase/locale.c
++++ b/dlls/kernelbase/locale.c
+@@ -448,11 +448,29 @@ static const NLS_LOCALE_DATA *get_locale_by_name( const WCHAR *name, LCID *lcid
+         *lcid = system_lcid;
+         return system_locale;
+     }
+-    if (!(entry = find_lcname_entry( name ))) return NULL;
++    if (!(entry = find_lcname_entry( name )))
++    {
++        /* Fallback for common locales that might be missing */
++        static const struct { const WCHAR *name; LCID lcid; } fallbacks[] = {
++            { L"en-US", 0x0409 },
++            { L"en-GB", 0x0809 },
++            { L"de-DE", 0x0407 },
++            { L"fr-FR", 0x040C },
++            { L"es-ES", 0x0C0A },
++            { L"it-IT", 0x0410 },
++            { L"ja-JP", 0x0411 },
++            { L"zh-CN", 0x0804 },
++        };
++        int i;
++        for (i = 0; i < ARRAY_SIZE(fallbacks); i++)
++        {
++            if (!wcsicmp( name, fallbacks[i].name ))
++            {
++                *lcid = fallbacks[i].lcid;
++                return NlsValidateLocale( lcid, 0 );
++            }
++        }
++        return NULL;
++    }
+     *lcid = entry->id;
+     return get_locale_data( entry->idx );
+ }

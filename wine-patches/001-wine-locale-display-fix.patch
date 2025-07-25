@@ -1,0 +1,26 @@
+diff --git a/tools/make_unicode b/tools/make_unicode
+index a258337d627..8504a5bdcc6 100755
+--- a/tools/make_unicode
++++ b/tools/make_unicode
+@@ -4790,6 +4790,21 @@ sub build_locale_data()
+         }
+         $sengdisplayname =~ s/\) \(/, /;
+         $snativedisplayname =~ s/\) \(/, /;
++        
++        # Windows-specific display name overrides to fix duplicate names
++        my %display_overrides = (
++            0x0403 => { eng => "Catalan (Catalan)", native => "català (català)" },           # ca-ES
++            0x042d => { eng => "Basque (Basque)", native => "euskara (euskara)" },         # eu-ES
++            0x0456 => { eng => "Galician (Galician)", native => "galego (galego)" },       # gl-ES
++            0x040a => { eng => "Spanish (Spain, Traditional Sort)", native => "español (España, alfabetización tradicional)" }, # es-ES_tradnl
++            0x0c0a => { eng => "Spanish (Spain, International Sort)", native => "español (España, alfabetización internacional)" }, # es-ES
++            0x0803 => { eng => "Valencian (Spain)", native => "valencià (Espanya)" },      # ca-ES-valencia
++        );
++        
++        if (defined $loc->{lcid} && exists $display_overrides{$loc->{lcid}}) {
++            $sengdisplayname = $display_overrides{$loc->{lcid}}->{eng};
++            $snativedisplayname = $display_overrides{$loc->{lcid}}->{native};
++        }
+         my $sscripts = locale_entry( $loc, "sscripts", $script ) || xml_query( $suppl, "/supplementalData/languageData/language[\@type='$language' and not(\@alt)]/\@scripts" );
+         $sscripts = (join ";", (sort split / /, ($sscripts || "Latn"))) . ";";
+         my $ireadinglayout = locale_entry( $loc, "ireadinglayout", 0 );

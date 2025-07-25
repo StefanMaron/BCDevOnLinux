@@ -1,0 +1,59 @@
+--- a/dlls/kernelbase/locale.c
++++ b/dlls/kernelbase/locale.c
+@@ -613,12 +613,20 @@ static int compare_locale_names( const WCHAR *n1, const WCHAR *n2 )
+ 
+ static const NLS_LOCALE_LCNAME_INDEX *find_lcname_entry( const WCHAR *name )
+ {
+     int min = 0, max = locale_table->nb_lcnames - 1;
++    
++    TRACE("find_lcname_entry: searching for '%s' in %u entries\n", 
++          debugstr_w(name), locale_table->nb_lcnames);
++    
+     while (min <= max)
+     {
+         int res, pos = (min + max) / 2;
+         const WCHAR *str = locale_strings + lcnames_index[pos].name;
+         res = compare_locale_names( name, str + 1 );
++        
++        TRACE("  comparing with '%s' at pos %d: res=%d\n", 
++              debugstr_w(str + 1), pos, res);
++        
+         if (res < 0) max = pos - 1;
+         else if (res > 0) min = pos + 1;
+         else return &lcnames_index[pos];
+     }
++    
++    TRACE("find_lcname_entry: '%s' not found\n", debugstr_w(name));
+     return NULL;
+ }
+ 
+@@ -648,11 +656,29 @@ static const NLS_LOCALE_DATA *get_locale_by_name( const WCHAR *name, LCID *lcid
+         *lcid = system_lcid;
+         return system_locale;
+     }
+-    if (!(entry = find_lcname_entry( name ))) return NULL;
++    if (!(entry = find_lcname_entry( name )))
++    {
++        /* Fallback for common locales that might be missing */
++        static const struct { const WCHAR *name; LCID lcid; } fallbacks[] = {
++            { L"en-US", 0x0409 },
++            { L"en-GB", 0x0809 },
++            { L"de-DE", 0x0407 },
++            { L"fr-FR", 0x040C },
++            { L"es-ES", 0x0C0A },
++        };
++        int i;
++        TRACE("get_locale_by_name: primary lookup failed for '%s', trying fallbacks\n", debugstr_w(name));
++        for (i = 0; i < ARRAY_SIZE(fallbacks); i++)
++        {
++            if (!wcsicmp( name, fallbacks[i].name ))
++            {
++                *lcid = fallbacks[i].lcid;
++                return NlsValidateLocale( lcid, 0 );
++            }
++        }
++        return NULL;
++    }
+     *lcid = entry->id;
+     return get_locale_data( entry->idx );
+ }
