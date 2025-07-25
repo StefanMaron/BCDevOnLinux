@@ -11,12 +11,34 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}Building Business Central with custom Wine...${NC}"
 
-# Check if wine-locale-display-fix.patch exists
-if [ ! -f "wine-locale-display-fix.patch" ]; then
-    echo -e "${RED}Error: wine-locale-display-fix.patch not found!${NC}"
-    echo "Please ensure the locale fix patch is in the current directory."
+# Check if wine patches directory exists and contains patches
+if [ ! -d "wine-patches" ]; then
+    echo -e "${RED}Error: wine-patches directory not found!${NC}"
+    echo "Please ensure the wine-patches directory exists in the current directory."
     exit 1
 fi
+
+# Check if there are any .patch files in the directory
+if ! ls wine-patches/*.patch >/dev/null 2>&1; then
+    echo -e "${RED}Error: No patch files found in wine-patches directory!${NC}"
+    echo "Please ensure at least one .patch file exists in wine-patches/"
+    exit 1
+fi
+
+# Check specifically for the critical locale fix patch
+if [ ! -f "wine-patches/001-wine-locale-display-fix.patch" ]; then
+    echo -e "${YELLOW}Warning: 001-wine-locale-display-fix.patch not found in wine-patches/${NC}"
+    echo "This patch is critical for Business Central locale support."
+fi
+
+# Show which patches will be applied
+echo -e "${GREEN}Wine patches that will be applied:${NC}"
+for patch in wine-patches/*.patch; do
+    if [ -f "$patch" ]; then
+        echo -e "  - $(basename "$patch")"
+    fi
+done | sort
+echo ""
 
 # Parse command line arguments
 BUILD_ONLY=false

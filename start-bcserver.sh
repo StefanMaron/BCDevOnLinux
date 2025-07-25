@@ -2,7 +2,13 @@
 
 set -e
 
-echo "Starting BC Server using BC4Ubuntu approach..."
+echo "Starting BC Server..."
+
+# Historical Note:
+# This script previously had multiple variants (workaround and final-fix) to handle
+# Wine culture/locale issues that caused BC to fail with "'en-US' is not a valid language code".
+# These workarounds are no longer needed since we now use a custom Wine build with locale fixes.
+# The old scripts are preserved in legacy/culture-workarounds/ for reference.
 
 # Set Wine environment variables following BC4Ubuntu methodology
 export WINEPREFIX="$HOME/.local/share/wineprefixes/bc1"
@@ -10,6 +16,11 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
+
+# Standard locale settings (no special workarounds needed with custom Wine)
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US:en
+export LC_ALL=en_US.UTF-8
 
 # Ensure virtual display is running
 if ! pgrep -f "Xvfb :0" > /dev/null; then
@@ -40,40 +51,61 @@ fi
 
 echo "Found BC Server at: $BCSERVER_PATH"
 
-# Extract Service Tier files if needed (following BC4Ubuntu approach)
-BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
-if [ ! -f "$BCSERVER_DIR/Microsoft.Dynamics.Nav.Server.exe" ]; then
-    echo "Extracting BC Service Tier files..."
-    cd "$BCSERVER_DIR"
-    # The artifacts should already be extracted by BcContainerHelper
-fi
-
-# Setup database connection
+# Set up database connection
 echo "Setting up database..."
 # Note: Assuming SQL Server is available via 'sql' hostname
 # This would typically be configured in docker-compose.yml
 
-# Generate encryption key if it doesn't exist
-if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
-    echo "Generating encryption key..."
-    pwsh /home/create-encryption-key.ps1
+# Source encryption functions for password handling
+source /home/bc-encryption-functions.sh
+
+# Check for existing RSA key first
+if [ -f "/home/bcserver/Keys/bc.key" ]; then
+    # Check if it's an RSA key (larger than 1000 bytes) or AES key (32 bytes)
+    KEY_SIZE=$(stat -c%s "/home/bcserver/Keys/bc.key" 2>/dev/null || echo 0)
+    if [ "$KEY_SIZE" -gt 1000 ]; then
+        echo "Found existing RSA encryption key (size: $KEY_SIZE bytes)"
+        RSA_KEY_EXISTS=true
+    else
+        echo "Found AES key, but BC requires RSA key for encryption provider"
+        RSA_KEY_EXISTS=false
+    fi
+else
+    echo "No encryption key found, generating AES key for future use"
+    bc_ensure_encryption_key "/home/bcserver/Keys" "bc.key"
+    RSA_KEY_EXISTS=false
 fi
+
+# NOTE: BC uses two types of encryption:
+# 1. RSA encryption for the LocalKeyFile provider (managed by BC internally)
+# 2. AES encryption for password protection (what we implemented)
+# If RSA key exists, BC can use ProtectedDatabasePassword
+# Otherwise, we use plain passwords
 
 # Create CustomSettings.config from the template file
 if [ -f "/home/CustomSettings.config" ]; then
     echo "Creating CustomSettings.config from template file..."
-    # Copy the template and substitute the SA_PASSWORD placeholder
+    
+    # For now, use plain password until RSA encryption is properly configured
+    # TODO: Implement proper RSA key generation for BC's encryption provider
     sed "s/\${SA_PASSWORD}/$SA_PASSWORD/g" /home/CustomSettings.config > /home/bcserver/CustomSettings.config
-    echo "CustomSettings.config created with substituted password"
+    
+    # Remove any ProtectedDatabasePassword entries and use plain DatabasePassword
+    sed -i 's/<add key="ProtectedDatabasePassword".*/<add key="DatabasePassword" value="'"$SA_PASSWORD"'" \/>/' /home/bcserver/CustomSettings.config
+    
+    echo "CustomSettings.config created with plain password (temporary solution)"
     
     # Also copy to the BC Server directory to override the default
+    BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
     cp /home/bcserver/CustomSettings.config "$BCSERVER_DIR/CustomSettings.config"
     echo "Copied CustomSettings.config to BC Server directory"
 else
     echo "WARNING: CustomSettings.config template not found at /home/CustomSettings.config"
-    # Remove the problematic UnsupportedLanguageIds from the default config
+    # Remove any problematic settings from the default config
+    BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
     if [ -f "$BCSERVER_DIR/CustomSettings.config" ]; then
         echo "Fixing default CustomSettings.config..."
+        # Remove UnsupportedLanguageIds which can cause issues
         sed -i '/<add key="UnsupportedLanguageIds"/d' "$BCSERVER_DIR/CustomSettings.config"
         echo "Removed UnsupportedLanguageIds from default config"
     fi
@@ -81,6 +113,7 @@ fi
 
 # Copy configuration and key files to Wine prefix (BC4Ubuntu approach)
 echo "Copying configuration files to Wine prefix..."
+BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
 WINE_BC_DIR="$BCSERVER_DIR"
 mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/230/Server/Keys"
 
@@ -91,92 +124,34 @@ fi
 if [ -f "/home/bcserver/Keys/bc.key" ]; then
     cp "/home/bcserver/Keys/bc.key" "$WINE_BC_DIR/Secret.key"
     cp "/home/bcserver/Keys/bc.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/230/Server/Keys/bc.key"
+else
+    echo "WARNING: Encryption key not found"
 fi
 
-# Start BC Server with Wine (BC4Ubuntu approach)
-echo "Starting BC Server with Wine..."
+# Verify Wine environment
+echo "Wine environment:"
+echo "  WINEPREFIX: $WINEPREFIX"
+echo "  WINEARCH: $WINEARCH"
+wine --version
+
+# Change to BC Server directory
 cd "$BCSERVER_DIR"
 
-# Ensure our config is being used - remove the problematic entries from default config
-if [ -f "CustomSettings.config" ]; then
-    echo "Fixing BC Server default config..."
-    # Remove the problematic UnsupportedLanguageIds entry
-    sed -i '/<add key="UnsupportedLanguageIds"/d' CustomSettings.config
-    # Update language settings to use culture names instead of LCIDs
-    sed -i 's/<add key="DefaultLanguage" value="1033"/<add key="DefaultLanguage" value="en-US"/' CustomSettings.config
-    sed -i 's/<add key="SupportedLanguages" value="1033"/<add key="SupportedLanguages" value="en-US"/' CustomSettings.config
-    # Ensure ServicesLanguage is set
-    if ! grep -q "ServicesLanguage" CustomSettings.config; then
-        sed -i '/<add key="DefaultLanguage"/a\  <add key="ServicesLanguage" value="en-US" \/>' CustomSettings.config
-    else
-        sed -i 's/<add key="ServicesLanguage" value=""/<add key="ServicesLanguage" value="en-US"/' CustomSettings.config
-    fi
-    echo "BC Server config fixed"
-fi
-
-# Check if BC Server requires .NET 8.0 by looking at the runtime config
-if [ -f "Microsoft.Dynamics.Nav.Server.runtimeconfig.json" ]; then
-    echo "BC Server requires .NET runtime. Checking availability..."
-    
-    # Try to start BC Server - if it fails due to missing .NET, we'll provide helpful guidance
-    echo "Attempting to start BC Server..."
-    echo "If this fails with 'You must install or update .NET', run:"
-    echo "  docker exec -it <container_name> /home/install-dotnet8-hosting.sh"
-    echo ""
-fi
-
-# Use the BC4Ubuntu command structure
-# WINEPREFIX="$WINEPREFIX" wine "$BCSERVER_PATH" /console
-
-# Find any database backup file and restore
+# Database setup (optional)
+# This section handles database restoration if a backup is found
 DB_BAK=$(find /home/bcartifacts -name "*.bak" -type f | head -1)
-if [ -z "$DB_BAK" ]; then
-    echo "WARNING: No database backup file found in /home/bcartifacts"
-    echo "Creating empty CRONUS database instead..."
-    /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "CREATE DATABASE [CRONUS];" -C -N 2>/dev/null || true
-else
-    echo "Found database backup at: $DB_BAK"
-    echo "Restoring CRONUS database from backup..."
-    
-    # First, drop the database if it exists
-    /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "IF DB_ID('CRONUS') IS NOT NULL DROP DATABASE [CRONUS];" -C -N 2>/dev/null || true
-    
-    # Restore the database from backup
-    /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "RESTORE DATABASE [CRONUS] FROM DISK = '$DB_BAK' WITH REPLACE;" -C -N 2>/dev/null
-    
-    if [ $? -eq 0 ]; then
-        echo "CRONUS database restored successfully from $DB_BAK"
-    else
-        echo "ERROR: Failed to restore CRONUS database from $DB_BAK, creating empty database instead..."
-        /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P "$SA_PASSWORD" -Q "CREATE DATABASE [CRONUS];" -C -N 2>/dev/null || true
-    fi
-fi
-
-# Setup encryption key and config (same as above)
-[ ! -f "/home/bcserver/Keys/BC210.key" ] && pwsh /home/create-encryption-key.ps1
-
-if [ -f "/home/bcserver/CustomSettings.config.template" ]; then
-    pwsh -Command "
-        \$key = [System.IO.File]::ReadAllBytes('/home/bcserver/Keys/BC210.key');
-        \$aes = [System.Security.Cryptography.Aes]::Create();
-        \$aes.Key = \$key;
-        \$aes.GenerateIV();
-        \$passwordBytes = [System.Text.Encoding]::UTF8.GetBytes('$SA_PASSWORD');
-        \$encryptor = \$aes.CreateEncryptor();
-        \$encryptedPassword = \$encryptor.TransformFinalBlock(\$passwordBytes, 0, \$passwordBytes.Length);
-        \$encryptedPasswordBase64 = [Convert]::ToBase64String(\$aes.IV + \$encryptedPassword);
-        \$configContent = Get-Content '/home/bcserver/CustomSettings.config.template' -Raw;
-        \$configContent = \$configContent -replace 'PLACEHOLDER_PASSWORD', \$encryptedPasswordBase64;
-        \$configContent | Out-File -FilePath '/home/bcserver/CustomSettings.config' -Encoding utf8;
-    "
+if [ -n "$DB_BAK" ]; then
+    echo "Found database backup: $DB_BAK"
+    # Note: Database restoration would typically be handled by SQL Server container
+    # This is just a placeholder for the logic
+    echo "Database restoration should be handled by SQL Server setup"
 fi
 
 # Start BC Server with Wine
-BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
-cd "$BCSERVER_DIR"
 echo "Starting BC Server with Wine..."
+echo "Command: wine $BCSERVER_PATH /console"
+echo ""
 
+# Execute BC Server
+# The custom Wine build handles all locale/culture issues internally
 exec wine "$BCSERVER_PATH" /console
-
-
-

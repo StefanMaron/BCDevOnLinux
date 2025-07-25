@@ -93,16 +93,15 @@ RUN git clone --depth 1 https://github.com/wine-staging/wine-staging.git /wine-s
     cd /wine-staging && \
     python3 ./staging/patchinstall.py DESTDIR=/wine-src --all
 
-# Copy and apply the locale display fix patch
-COPY wine-locale-display-fix.patch /wine-locale-display-fix.patch
-RUN cd /wine-src && \
-    patch -p1 < /wine-locale-display-fix.patch || { \
-        echo "Patch failed, attempting to apply manually..."; \
-        # If patch fails, try to apply the changes manually
-        cp /wine-locale-display-fix.patch /tmp/; \
-    }
+# Copy patch application script and patches directory
+COPY apply-wine-patches.sh /apply-wine-patches.sh
+COPY wine-patches /wine-patches
+RUN chmod +x /apply-wine-patches.sh
 
-# Regenerate locale data with the fix
+# Apply all custom Wine patches from the patches directory
+RUN /apply-wine-patches.sh /wine-src /wine-patches
+
+# Regenerate locale data after patches
 RUN cd /wine-src/tools && \
     perl make_unicode && \
     cd ..
@@ -150,6 +149,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Copy custom Wine build from builder stage
 COPY --from=wine-builder /opt/wine-custom /opt/wine-custom
 COPY --from=wine-builder /opt/wine-custom/wine-version.txt /opt/wine-custom/wine-version.txt
+COPY --from=wine-builder /wine-src/PATCHES_APPLIED.txt /opt/wine-custom/PATCHES_APPLIED.txt
 
 # Install runtime dependencies
 RUN dpkg --add-architecture i386 && \
@@ -209,6 +209,14 @@ RUN dpkg --add-architecture i386 && \
         locales \
         # Additional tools
         lsb-release \
+        vim-common \
+        # SQL Server tools dependencies
+        apt-transport-https \
+        # Network debugging tools
+        net-tools \
+        iputils-ping \
+        dnsutils \
+        telnet \
     && locale-gen en_US.UTF-8 \
     && update-locale LANG=en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
@@ -229,6 +237,15 @@ RUN wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/pac
 RUN echo "Wine version installed:" && cat /opt/wine-custom/wine-version.txt
 
 # Create directories for BC artifacts and configuration
+# Install SQL Server command line tools
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev && \
+    echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> /etc/bash.bashrc && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create necessary directories  
 RUN mkdir -p /home/bcartifacts /home/bcserver/Keys
 
 # Set shell to PowerShell for BC Container Helper installation
@@ -260,6 +277,7 @@ SHELL ["/bin/bash", "-c"]
 # Copy scripts and configuration files
 COPY *.ps1 /home/
 COPY *.sh /home/
+COPY bc-encryption-functions.sh /home/
 COPY CustomSettings.config /home/
 RUN chmod +x /home/*.sh
 
