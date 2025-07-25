@@ -44,126 +44,39 @@ try {
         throw "Key file not found: $KeyPath"
     }
     
-    # Read and decrypt the RSA key
+    # Read the RSA key from XML format (like New-NAVEncryptionKey creates)
     Write-Host "Reading RSA encryption key..." -ForegroundColor Yellow
-    $keyData = [System.IO.File]::ReadAllBytes($KeyPath)
-    Write-Host "Key file size: $($keyData.Length) bytes" -ForegroundColor Cyan
+    $rsaKeyXml = [System.IO.File]::ReadAllText($KeyPath, [System.Text.Encoding]::UTF8)
     
-    # Read password if available
-    $keyPassword = ""
-    if ($PasswordFile -and (Test-Path $PasswordFile)) {
-        Write-Host "Reading key password from file..." -ForegroundColor Yellow
-        $keyPassword = [System.IO.File]::ReadAllText($PasswordFile, [System.Text.Encoding]::UTF8)
-        $keyPassword = $keyPassword.Trim()
-        Write-Host "Password loaded successfully" -ForegroundColor Green
-    } else {
-        Write-Host "No password file provided, using empty password" -ForegroundColor Yellow
+    Write-Host "Key file format: BC-compatible XML" -ForegroundColor Cyan
+    Write-Host "Key XML length: $($rsaKeyXml.Length) characters" -ForegroundColor Cyan
+    
+    # Validate this is a BC-compatible RSA key in XML format
+    if (-not $rsaKeyXml.StartsWith("<RSAKeyValue>")) {
+        throw "Invalid RSA key format - expected XML format like New-NAVEncryptionKey creates"
     }
     
-    # Extract the public key from the RSA key file
-    Write-Host "Extracting public key from RSA key..." -ForegroundColor Yellow
+    Write-Host "✅ Valid BC RSA key format detected" -ForegroundColor Green
+    # Load the RSA key from XML and extract public key for database storage
+    Write-Host "Loading RSA key from XML format..." -ForegroundColor Yellow
     
-    # Decrypt the key file to get the RSA key data
-    if ($keyData.Length -gt 32) {
-        # This is likely an encrypted RSA key file
-        $salt = $keyData[0..15]
-        $iv = $keyData[16..31]
-        $encryptedData = $keyData[32..($keyData.Length-1)]
+    $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+    try {
+        # Load the complete RSA key from XML
+        $rsa.FromXmlString($rsaKeyXml)
+        Write-Host "RSA key loaded successfully" -ForegroundColor Green
+        Write-Host "Key size: $($rsa.KeySize) bits" -ForegroundColor Cyan
         
-        # Try different password variants to handle encoding issues
-        $passwordVariants = @()
-        if ($keyPassword) {
-            # The key is encrypted using the raw password string (not the SecureString conversion)
-            # Since the password file contains the original Base64 string that was used to create the SecureString,
-            # we should use it directly for PBKDF2 derivation
-            $passwordVariants += $keyPassword.Trim()
-            $passwordVariants += $keyPassword.TrimEnd("`r", "`n", " ", "`t")
-            $passwordVariants += $keyPassword
-            
-            # Also try the SecureString round-trip in case that's what was actually used
-            try {
-                $securePassword = ConvertTo-SecureString -String $keyPassword.Trim() -AsPlainText -Force
-                $marshalPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
-                $passwordVariants += $marshalPassword
-                if ($VerboseLogging) {
-                    Write-Host "Added SecureString-converted password variant" -ForegroundColor Cyan
-                }
-            } catch {
-                if ($VerboseLogging) {
-                    Write-Host "SecureString conversion failed: $($_.Exception.Message)" -ForegroundColor Yellow
-                }
-            }
-        }
-        $passwordVariants += ""  # Try empty password as fallback
+        # Extract public key only for database storage
+        $publicKeyXml = $rsa.ToXmlString($false)  # false = public key only
+        Write-Host "Public key extracted for database storage" -ForegroundColor Green
+        Write-Host "Public key XML length: $($publicKeyXml.Length) characters" -ForegroundColor Cyan
         
-        $decryptionSuccessful = $false
-        $keyContainer = $null
-        
-        foreach ($passwordAttempt in $passwordVariants) {
-            try {
-                if ($VerboseLogging) {
-                    Write-Host "Trying password variant (length: $($passwordAttempt.Length))..." -ForegroundColor Cyan
-                }
-                
-                # Derive decryption key from password using PBKDF2
-                $pbkdf2 = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($passwordAttempt, $salt, 10000)
-                $aesKey = $pbkdf2.GetBytes(32)
-                
-                # Decrypt the RSA key data
-                $aes = [System.Security.Cryptography.Aes]::Create()
-                $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-                $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-                $aes.Key = $aesKey
-                $aes.IV = $iv
-                
-                $decryptor = $aes.CreateDecryptor()
-                $decryptedBytes = $decryptor.TransformFinalBlock($encryptedData, 0, $encryptedData.Length)
-                $keyJson = [System.Text.Encoding]::UTF8.GetString($decryptedBytes)
-                
-                # Parse the JSON to get the key data
-                $keyContainer = $keyJson | ConvertFrom-Json
-                $publicKeyBytes = [Convert]::FromBase64String($keyContainer.PublicKey)
-                
-                if ($VerboseLogging) {
-                    Write-Host "AES decryption successful with password variant!" -ForegroundColor Green
-                    Write-Host "Decrypted data size: $($decryptedBytes.Length) bytes" -ForegroundColor Green
-                }
-                
-                $decryptionSuccessful = $true
-                $aes.Dispose()
-                $pbkdf2.Dispose()
-                $decryptor.Dispose()
-                break
-                
-            } catch {
-                # Clean up and try next password variant
-                if ($aes) { $aes.Dispose() }
-                if ($pbkdf2) { $pbkdf2.Dispose() }
-                if ($decryptor) { $decryptor.Dispose() }
-                
-                if ($VerboseLogging) {
-                    Write-Host "Password variant failed: $($_.Exception.Message)" -ForegroundColor Red
-                }
-            }
-        }
-        
-        if (-not $decryptionSuccessful) {
-            throw "Failed to decrypt RSA key with provided password"
-        }
-        
-        Write-Host "RSA key decrypted successfully" -ForegroundColor Green
-        Write-Host "Key Type: $($keyContainer.KeyType)" -ForegroundColor Cyan
-        Write-Host "Key Size: $($keyContainer.KeySize) bits" -ForegroundColor Cyan
-        
-        $aes.Dispose()
-    } else {
-        throw "Invalid RSA key file format - file too small to contain encrypted RSA key"
+    } catch {
+        throw "Failed to load RSA key from XML: $($_.Exception.Message)"
+    } finally {
+        $rsa.Dispose()
     }
-    
-    # Convert public key to Base64 for database storage
-    $publicKeyBase64 = [Convert]::ToBase64String($publicKeyBytes)
-    Write-Host "Public key extracted successfully" -ForegroundColor Green
-    Write-Host "Public key length: $($publicKeyBase64.Length) characters" -ForegroundColor Cyan
     
     # Connect to SQL Server and import the key
     Write-Host ""
@@ -186,12 +99,12 @@ try {
             
             # Create the table structure that BC expects
             $createTableQuery = @"
-CREATE TABLE [dbo].[`$ndo`$publicencryptionkey] (
-    [timestamp] [timestamp] NOT NULL,
-    [Key Code] [nvarchar](20) NOT NULL,
-    [Public Key] [nvarchar](max) NOT NULL,
-    CONSTRAINT [PK_`$ndo`$publicencryptionkey] PRIMARY KEY CLUSTERED ([Key Code])
-)
+CREATE TABLE [dbo].[`$ndo`$publicencryptionkey](
+    [id] [int] NOT NULL,
+    [publickey] [nvarchar](512) NULL,
+    CONSTRAINT [PK`$`$ndo`$publicencryptionkey] PRIMARY KEY CLUSTERED ([id] ASC)
+    WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
 "@
             $createCommand = New-Object System.Data.SqlClient.SqlCommand($createTableQuery, $connection)
             $createCommand.ExecuteNonQuery() | Out-Null
@@ -201,39 +114,39 @@ CREATE TABLE [dbo].[`$ndo`$publicencryptionkey] (
         }
         
         # Insert or update the encryption key
-        $keyCode = "DEFAULT"
-        Write-Host "Inserting/updating encryption key with code '$keyCode'..." -ForegroundColor Yellow
+        $keyId = 1  # Use ID 1 as the default key
+        Write-Host "Inserting/updating encryption key with ID '$keyId'..." -ForegroundColor Yellow
         
         $upsertQuery = @"
 MERGE [dbo].[`$ndo`$publicencryptionkey] AS target
-USING (VALUES (@KeyCode, @PublicKey)) AS source ([Key Code], [Public Key])
-ON target.[Key Code] = source.[Key Code]
+USING (VALUES (@KeyId, @PublicKey)) AS source ([id], [publickey])
+ON target.[id] = source.[id]
 WHEN MATCHED THEN
-    UPDATE SET [Public Key] = source.[Public Key]
+    UPDATE SET [publickey] = source.[publickey]
 WHEN NOT MATCHED THEN
-    INSERT ([Key Code], [Public Key])
-    VALUES (source.[Key Code], source.[Public Key]);
+    INSERT ([id], [publickey])
+    VALUES (source.[id], source.[publickey]);
 "@
         
         $upsertCommand = New-Object System.Data.SqlClient.SqlCommand($upsertQuery, $connection)
-        $upsertCommand.Parameters.AddWithValue("@KeyCode", $keyCode) | Out-Null
-        $upsertCommand.Parameters.AddWithValue("@PublicKey", $publicKeyBase64) | Out-Null
+        $upsertCommand.Parameters.AddWithValue("@KeyId", $keyId) | Out-Null
+        $upsertCommand.Parameters.AddWithValue("@PublicKey", $publicKeyXml) | Out-Null
         
         $rowsAffected = $upsertCommand.ExecuteNonQuery()
         Write-Host "Key import completed - $rowsAffected row(s) affected" -ForegroundColor Green
         
         # Verify the import
-        $verifyQuery = "SELECT [Key Code], LEN([Public Key]) as [Key Length] FROM [dbo].[`$ndo`$publicencryptionkey] WHERE [Key Code] = @KeyCode"
+        $verifyQuery = "SELECT [id], LEN([publickey]) as [Key Length] FROM [dbo].[`$ndo`$publicencryptionkey] WHERE [id] = @KeyId"
         $verifyCommand = New-Object System.Data.SqlClient.SqlCommand($verifyQuery, $connection)
-        $verifyCommand.Parameters.AddWithValue("@KeyCode", $keyCode) | Out-Null
+        $verifyCommand.Parameters.AddWithValue("@KeyId", $keyId) | Out-Null
         
         $reader = $verifyCommand.ExecuteReader()
         if ($reader.Read()) {
-            $storedKeyCode = $reader["Key Code"]
+            $storedKeyId = $reader["id"]
             $storedKeyLength = $reader["Key Length"]
             Write-Host ""
             Write-Host "✅ Verification successful:" -ForegroundColor Green
-            Write-Host "   Key Code: $storedKeyCode" -ForegroundColor Cyan
+            Write-Host "   Key ID: $storedKeyId" -ForegroundColor Cyan
             Write-Host "   Key Length: $storedKeyLength characters" -ForegroundColor Cyan
         }
         $reader.Close()
@@ -247,6 +160,7 @@ WHEN NOT MATCHED THEN
     Write-Host ""
     Write-Host "📋 Summary:" -ForegroundColor Cyan
     Write-Host "  ✅ Public key extracted from RSA key file" -ForegroundColor White
+    Write-Host "  ✅ Key converted to XML format for BC compatibility" -ForegroundColor White
     Write-Host "  ✅ Key imported to dbo.`$ndo`$publicencryptionkey table" -ForegroundColor White
     Write-Host "  ✅ BC Server can now use ProtectedDatabasePassword" -ForegroundColor White
     Write-Host "  ✅ Database encryption is fully configured" -ForegroundColor White

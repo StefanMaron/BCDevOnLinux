@@ -9,27 +9,74 @@ source /home/bc-encryption-functions.sh
 bc_detect_key_type() {
     local key_file="${1:-/home/bcserver/Keys/bc.key}"
     
+    echo "DEBUG: Checking key file: $key_file" >&2
+    
     if [ ! -f "$key_file" ]; then
+        echo "DEBUG: File does not exist" >&2
         echo "NONE"
         return 1
     fi
     
-    # Check file size - RSA keys are much larger
-    local key_size=$(stat -c%s "$key_file" 2>/dev/null || echo 0)
+    echo "DEBUG: File exists, reading content..." >&2
     
-    if [ "$key_size" -gt 1000 ]; then
-        # Large file likely contains RSA key
+    # Get file size first
+    local key_size
+    key_size=$(stat -c%s "$key_file" 2>/dev/null || echo 0)
+    echo "DEBUG: File size: $key_size bytes" >&2
+    
+    # Read first line safely
+    local first_line
+    first_line=$(head -n 1 "$key_file" 2>/dev/null | tr -d '\0' | head -c 100 2>/dev/null || echo "")
+    
+    echo "DEBUG: First line (first 100 chars): '$first_line'" >&2
+    
+    # Check for XML RSA format (new format)
+    if [[ "$first_line" == *"<RSAKeyValue>"* ]]; then
+        echo "DEBUG: Detected RSA XML format (new)" >&2
         echo "RSA"
         return 0
-    elif [ "$key_size" -eq 32 ]; then
-        # 32 bytes = AES-256 key
+    fi
+    
+    # Check for AES format (32 bytes exactly)
+    if [ "$key_size" -eq 32 ]; then
+        echo "DEBUG: Detected AES format (32 bytes)" >&2
         echo "AES"
         return 0
-    else
-        # Unknown format
+    fi
+    
+    # Check for old encrypted RSA format (JSON wrapper)
+    if [[ "$first_line" == "{"* ]]; then
+        echo "DEBUG: Detected legacy RSA format (JSON)" >&2
+        echo "LEGACY_RSA"
+        return 0
+    fi
+    
+    # Check for old encrypted RSA format (binary with salt/IV)
+    if [ "$key_size" -gt 100 ] && [ "$key_size" -lt 10000 ]; then
+        # This might be an old encrypted RSA key (binary format)
+        # Try to detect if this looks like AES-encrypted data
+        local file_type
+        file_type=$(file "$key_file" 2>/dev/null || echo "")
+        echo "DEBUG: File type detection: $file_type" >&2
+        
+        if [[ "$file_type" == *"data"* ]] || [[ "$file_type" == *"binary"* ]]; then
+            echo "DEBUG: Detected legacy encrypted RSA format (binary)" >&2
+            echo "LEGACY_RSA"
+            return 0
+        fi
+    fi
+    
+    # If file is not empty but we couldn't identify it
+    if [ "$key_size" -gt 0 ]; then
+        echo "DEBUG: Unknown format - file has content but doesn't match known patterns" >&2
         echo "UNKNOWN"
         return 1
     fi
+    
+    # Empty file
+    echo "DEBUG: Empty file detected" >&2
+    echo "NONE"
+    return 1
 }
 
 # Function to generate RSA encryption key using PowerShell

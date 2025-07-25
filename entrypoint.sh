@@ -11,24 +11,71 @@ export SA_PASSWORD=${SA_PASSWORD:-"YourPassword123"}
 if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
     echo "Setting up BC encryption with RSA key generation..."
     
-    # Source enhanced encryption functions for RSA and AES support
-    source /home/bc-rsa-encryption-functions.sh
+    # Create keys directory if it doesn't exist
+    mkdir -p "/home/bcserver/Keys"
     
-    # Try to generate RSA key first (preferred for BC)
-    if bc_ensure_encryption_key_enhanced "/home/bcserver/Keys" "bc.key" "true"; then
-        # Check what was generated
-        KEY_TYPE=$(bc_detect_key_type "/home/bcserver/Keys/bc.key")
-        if [ "$KEY_TYPE" = "RSA" ]; then
+    # Try to generate RSA key in XML format (BC standard)
+    if command -v pwsh &> /dev/null; then
+        echo "Generating RSA encryption key in BC-compatible XML format..."
+        if pwsh -File "/home/create-rsa-encryption-key.ps1" -KeyPath "/home/bcserver/Keys/bc.key"; then
             echo "✅ RSA encryption key generated successfully"
+            
+            # Verify the key was created in correct format
+            if [ -f "/home/bcserver/Keys/bc.key" ]; then
+                # Source detection functions to verify
+                source /home/bc-rsa-encryption-functions.sh
+                KEY_TYPE=$(bc_detect_key_type "/home/bcserver/Keys/bc.key")
+                echo "Generated key type: $KEY_TYPE"
+                
+                if [ "$KEY_TYPE" = "RSA" ]; then
+                    echo "✅ RSA key verified - BC-compatible XML format"
+                else
+                    echo "⚠️  Warning: Generated key type is $KEY_TYPE, expected RSA"
+                fi
+            fi
         else
-            echo "✅ AES encryption key generated (RSA not available)"
+            echo "❌ Failed to generate RSA key with PowerShell"
+            echo "Falling back to AES encryption..."
+            
+            # Fallback to AES key generation
+            source /home/bc-rsa-encryption-functions.sh
+            if bc_ensure_encryption_key "/home/bcserver/Keys" "bc.key"; then
+                echo "✅ AES encryption key generated (fallback)"
+            else
+                echo "❌ Failed to generate any encryption key"
+                exit 1
+            fi
         fi
     else
-        echo "❌ Failed to generate encryption key"
-        exit 1
+        echo "PowerShell not available for RSA key generation"
+        echo "Generating AES encryption key instead..."
+        
+        # Fallback to AES key generation
+        source /home/bc-rsa-encryption-functions.sh
+        if bc_ensure_encryption_key "/home/bcserver/Keys" "bc.key"; then
+            echo "✅ AES encryption key generated"
+        else
+            echo "❌ Failed to generate encryption key"
+            exit 1
+        fi
     fi
 else
     echo "Encryption key already exists, skipping generation"
+    
+    # Check if existing key needs upgrade to XML format
+    source /home/bc-rsa-encryption-functions.sh
+    KEY_TYPE=$(bc_detect_key_type "/home/bcserver/Keys/bc.key")
+    echo "Existing key type: $KEY_TYPE"
+    
+    if [ "$KEY_TYPE" = "LEGACY_RSA" ]; then
+        echo "⚠️  Legacy RSA key detected - will be upgraded during BC Server startup"
+    elif [ "$KEY_TYPE" = "RSA" ]; then
+        echo "✅ Modern RSA key in XML format detected"
+    elif [ "$KEY_TYPE" = "AES" ]; then
+        echo "✅ AES key detected"
+    else
+        echo "⚠️  Unknown key format: $KEY_TYPE"
+    fi
 fi
 
 # Check if this is first run and initialize Wine if needed
