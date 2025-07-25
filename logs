@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# Wrapper script for viewing container logs
+
+# Detect which compose file to use
+if [ -f "compose-wine-custom.yml" ]; then
+    COMPOSE_FILE="compose-wine-custom.yml"
+elif [ -f "compose.yml" ]; then
+    COMPOSE_FILE="compose.yml"
+else
+    echo "Error: No compose file found!"
+    exit 1
+fi
+
+# Default to following logs
+FOLLOW="-f"
+SERVICE=""
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n|--no-follow)
+            FOLLOW=""
+            shift
+            ;;
+        -t|--tail)
+            TAIL="--tail $2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] [SERVICE]"
+            echo ""
+            echo "View logs from BC and SQL containers"
+            echo ""
+            echo "Options:"
+            echo "  -n, --no-follow     Don't follow log output"
+            echo "  -t, --tail NUMBER   Number of lines to show from the end"
+            echo "  -h, --help          Show this help message"
+            echo ""
+            echo "Services:"
+            echo "  bc                  Show only BC container logs"
+            echo "  sql                 Show only SQL container logs"
+            echo "  (none)              Show logs from both containers"
+            echo ""
+            echo "Examples:"
+            echo "  $0                  # Follow logs from both containers"
+            echo "  $0 bc               # Follow only BC logs"
+            echo "  $0 -n sql           # Show SQL logs without following"
+            echo "  $0 -t 50 bc         # Show last 50 lines of BC logs"
+            exit 0
+            ;;
+        bc|sql)
+            SERVICE="$1"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Execute logs command
+exec docker compose -f "$COMPOSE_FILE" logs $FOLLOW $TAIL $SERVICE

@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Wrapper script for executing commands in the BC container
+
+# Detect which compose file to use
+if [ -f "compose-wine-custom.yml" ]; then
+    COMPOSE_FILE="compose-wine-custom.yml"
+elif [ -f "compose.yml" ]; then
+    COMPOSE_FILE="compose.yml"
+else
+    echo "Error: No compose file found!"
+    exit 1
+fi
+
+# Parse options
+INTERACTIVE=""
+while [[ $# -gt 0 ]] && [[ "$1" == -* ]]; do
+    case "$1" in
+        -i|--interactive)
+            INTERACTIVE="-it"
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] [COMMAND]"
+            echo ""
+            echo "Execute commands in the BC container"
+            echo ""
+            echo "Options:"
+            echo "  -i, --interactive    Run interactively (allocate TTY)"
+            echo "  -h, --help          Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                          # Interactive bash shell"
+            echo "  $0 wine --version           # Run wine --version"
+            echo "  $0 -i pwsh                  # Interactive PowerShell"
+            echo "  $0 ps aux                   # List processes"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Check if container is running
+if ! docker compose -f "$COMPOSE_FILE" ps --services --filter "status=running" | grep -q "^bc$"; then
+    echo "Error: BC container is not running!"
+    echo "Start it with: docker compose -f $COMPOSE_FILE up -d bc"
+    exit 1
+fi
+
+# If no command provided, default to interactive bash
+if [ $# -eq 0 ]; then
+    exec docker compose -f "$COMPOSE_FILE" exec -it bc bash
+else
+    # Execute the provided command
+    exec docker compose -f "$COMPOSE_FILE" exec $INTERACTIVE bc "$@"
+fi
