@@ -7,10 +7,28 @@ echo "Starting Business Central Container using BC4Ubuntu approach..."
 # Set default environment variables if not provided
 export SA_PASSWORD=${SA_PASSWORD:-"YourPassword123"}
 
-# Setup BC encryption keys using bash script
+# Setup BC encryption keys with RSA support
 if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
-    echo "Setting up BC encryption..."
-    /home/setup-bc-encryption.sh
+    echo "Setting up BC encryption with RSA key generation..."
+    
+    # Source enhanced encryption functions for RSA and AES support
+    source /home/bc-rsa-encryption-functions.sh
+    
+    # Try to generate RSA key first (preferred for BC)
+    if bc_ensure_encryption_key_enhanced "/home/bcserver/Keys" "bc.key" "true"; then
+        # Check what was generated
+        KEY_TYPE=$(bc_detect_key_type "/home/bcserver/Keys/bc.key")
+        if [ "$KEY_TYPE" = "RSA" ]; then
+            echo "✅ RSA encryption key generated successfully"
+        else
+            echo "✅ AES encryption key generated (RSA not available)"
+        fi
+    else
+        echo "❌ Failed to generate encryption key"
+        exit 1
+    fi
+else
+    echo "Encryption key already exists, skipping generation"
 fi
 
 # Check if this is first run and initialize Wine if needed
