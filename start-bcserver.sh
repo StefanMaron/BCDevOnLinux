@@ -115,7 +115,7 @@ fi
 echo "Copying configuration files to Wine prefix..."
 BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
 WINE_BC_DIR="$BCSERVER_DIR"
-mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/230/Server/Keys"
+mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
 
 if [ -f "/home/bcserver/CustomSettings.config" ]; then
     cp "/home/bcserver/CustomSettings.config" "$WINE_BC_DIR/"
@@ -123,7 +123,7 @@ fi
 
 if [ -f "/home/bcserver/Keys/bc.key" ]; then
     cp "/home/bcserver/Keys/bc.key" "$WINE_BC_DIR/Secret.key"
-    cp "/home/bcserver/Keys/bc.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/230/Server/Keys/bc.key"
+    cp "/home/bcserver/Keys/bc.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/bc.key"
 else
     echo "WARNING: Encryption key not found"
 fi

@@ -12,8 +12,11 @@ SA_PASSWORD="${SA_PASSWORD}"
 if [ -z "$DATABASE_NAME" ] && [ -f "/home/CustomSettings.config" ]; then
     DATABASE_NAME=$(grep -oP '(?<=DatabaseName" value=")[^"]+' /home/CustomSettings.config 2>/dev/null || echo "")
 fi
+
 DATABASE_NAME="${DATABASE_NAME:-CRONUS}"
-BACKUP_FILE="/home/bcartifacts/w1/BusinessCentral-W1.bak"
+
+# Find the backup file in /home/bcartifacts
+BACKUP_FILE=$(find /home/bcartifacts -name "*.bak" -type f | head -1)
 
 # Add SQL tools to PATH if not already there
 export PATH="$PATH:/opt/mssql-tools18/bin"
@@ -53,26 +56,41 @@ if [ "$DB_EXISTS" = "1" ]; then
 fi
 
 # Check if backup file exists
-if [ ! -f "$BACKUP_FILE" ]; then
-    echo "WARNING: Backup file not found at $BACKUP_FILE"
+if [ -z "$BACKUP_FILE" ] || [ ! -f "$BACKUP_FILE" ]; then
+    echo "WARNING: No .bak file found in /home/bcartifacts/"
     echo "Creating empty database '$DATABASE_NAME'..."
     execute_sql "CREATE DATABASE [$DATABASE_NAME]"
     echo "Empty database created."
     exit 0
 fi
 
+echo "Found backup file: $BACKUP_FILE"
 echo "Restoring database from backup..."
 
 # Get logical file names from backup
 echo "Reading backup file information..."
 FILELISTONLY=$(execute_sql "RESTORE FILELISTONLY FROM DISK = N'$BACKUP_FILE'")
 
-# Extract logical names (assuming standard BC backup structure)
-DATA_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -E "^\S+.*\.mdf" | awk '{print $1}')
-LOG_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -E "^\S+.*\.ldf" | awk '{print $1}')
+echo "Debug: FILELISTONLY output:"
+echo "$FILELISTONLY"
+
+# Extract logical names with more robust patterns
+DATA_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -i "\.mdf" | awk '{print $1}' | head -1)
+LOG_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -i "\.ldf" | awk '{print $1}' | head -1)
+
+# If the above doesn't work, try alternative patterns
+if [ -z "$DATA_LOGICAL_NAME" ]; then
+    DATA_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -E "ROWS|D|Data" | head -1 | awk '{print $1}')
+fi
+
+if [ -z "$LOG_LOGICAL_NAME" ]; then
+    LOG_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -E "LOG|L|Log" | head -1 | awk '{print $1}')
+fi
 
 if [ -z "$DATA_LOGICAL_NAME" ] || [ -z "$LOG_LOGICAL_NAME" ]; then
     echo "ERROR: Could not determine logical file names from backup"
+    echo "Available files in backup:"
+    echo "$FILELISTONLY"
     exit 1
 fi
 

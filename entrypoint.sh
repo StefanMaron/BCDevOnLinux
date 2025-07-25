@@ -7,12 +7,6 @@ echo "Starting Business Central Container using BC4Ubuntu approach..."
 # Set default environment variables if not provided
 export SA_PASSWORD=${SA_PASSWORD:-"YourPassword123"}
 
-# Generate configuration template if it doesn't exist
-if [ ! -f "/home/bcserver/CustomSettings.config.template" ]; then
-    echo "Creating configuration template..."
-    pwsh /home/create-config-template.ps1
-fi
-
 # Setup BC encryption keys using bash script
 if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
     echo "Setting up BC encryption..."
