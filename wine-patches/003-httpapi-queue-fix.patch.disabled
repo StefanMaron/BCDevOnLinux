@@ -1,0 +1,38 @@
+diff --git a/dlls/httpapi/httpapi_main.c b/dlls/httpapi/httpapi_main.c
+index 1c3504dd0d9..0764d230ccf 100644
+--- a/dlls/httpapi/httpapi_main.c
++++ b/dlls/httpapi/httpapi_main.c
+@@ -1041,6 +1041,7 @@ ULONG WINAPI HttpCreateRequestQueue(HTTPAPI_VERSION version, const WCHAR *name,
+     OBJECT_ATTRIBUTES attr = {sizeof(attr)};
+     UNICODE_STRING string = RTL_CONSTANT_STRING(L"\\Device\\Http\\ReqQueue");
+     IO_STATUS_BLOCK iosb;
++    NTSTATUS status;
+ 
+     TRACE("version %u.%u, name %s, sa %p, flags %#lx, handle %p.\n",
+             version.HttpApiMajorVersion, version.HttpApiMinorVersion,
+@@ -1062,8 +1063,23 @@ ULONG WINAPI HttpCreateRequestQueue(HTTPAPI_VERSION version, const WCHAR *name,
+     if (sa && sa->bInheritHandle)
+         attr.Attributes |= OBJ_INHERIT;
+     attr.SecurityDescriptor = sa ? sa->lpSecurityDescriptor : NULL;
+-    return RtlNtStatusToDosError(NtCreateFile(handle, SYNCHRONIZE, &attr, &iosb, NULL,
+-            FILE_ATTRIBUTE_NORMAL, 0, FILE_OPEN, FILE_NON_DIRECTORY_FILE, NULL, 0));
++    
++    status = NtCreateFile(handle, GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE, &attr, &iosb, NULL,
++            FILE_ATTRIBUTE_NORMAL, 0, FILE_OPEN, FILE_NON_DIRECTORY_FILE, NULL, 0);
++    
++    if (!NT_SUCCESS(status))
++    {
++        TRACE("Failed to open device %s, status %#lx\n", debugstr_w(string.Buffer), status);
++        
++        /* Try with just SYNCHRONIZE if GENERIC_READ | GENERIC_WRITE fails */
++        if (status == 0xC0000022) /* STATUS_ACCESS_DENIED */
++        {
++            status = NtCreateFile(handle, SYNCHRONIZE, &attr, &iosb, NULL,
++                    FILE_ATTRIBUTE_NORMAL, 0, FILE_OPEN, FILE_NON_DIRECTORY_FILE, NULL, 0);
++        }
++    }
++    
++    return RtlNtStatusToDosError(status);
+ }
+ 
+ /***********************************************************************

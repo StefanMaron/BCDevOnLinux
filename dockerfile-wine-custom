@@ -2,8 +2,7 @@
 FROM ubuntu:22.04 AS wine-builder
 
 # Install Wine build dependencies
-RUN apt-get update && \
-    dpkg --add-architecture i386 && \
+RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         # Build essentials
@@ -149,7 +148,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Copy custom Wine build from builder stage
 COPY --from=wine-builder /opt/wine-custom /opt/wine-custom
 COPY --from=wine-builder /opt/wine-custom/wine-version.txt /opt/wine-custom/wine-version.txt
-COPY --from=wine-builder /wine-src/PATCHES_APPLIED.txt /opt/wine-custom/PATCHES_APPLIED.txt
 
 # Install runtime dependencies
 RUN dpkg --add-architecture i386 && \
@@ -213,7 +211,6 @@ RUN dpkg --add-architecture i386 && \
         # SQL Server tools dependencies
         apt-transport-https \
         # Network debugging tools
-        net-tools \
         iputils-ping \
         dnsutils \
         telnet \
@@ -225,25 +222,18 @@ RUN dpkg --add-architecture i386 && \
 RUN wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O /usr/bin/winetricks && \
     chmod +x /usr/bin/winetricks
 
-# Install PowerShell
+# Install Microsoft repository and packages (PowerShell and SQL tools)
 RUN wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" && \
     dpkg -i packages-microsoft-prod.deb && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
     apt-get install -y powershell && \
+    ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev && \
+    echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> /etc/bash.bashrc && \
     rm -rf /var/lib/apt/lists/*
 
 # Show Wine version
 RUN echo "Wine version installed:" && cat /opt/wine-custom/wine-version.txt
-
-# Create directories for BC artifacts and configuration
-# Install SQL Server command line tools
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt-get update && \
-    ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev && \
-    echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> /etc/bash.bashrc && \
-    rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories  
 RUN mkdir -p /home/bcartifacts /home/bcserver/Keys
@@ -279,7 +269,16 @@ COPY *.ps1 /home/
 COPY *.sh /home/
 COPY bc-encryption-functions.sh /home/
 COPY CustomSettings.config /home/
+# Also copy to bcserver directory to ensure it's used
+RUN mkdir -p /home/bcserver && cp /home/CustomSettings.config /home/bcserver/
 RUN chmod +x /home/*.sh
+
+# Set up Wine environment for all shell sessions
+RUN echo "" >> /root/.bashrc && \
+    echo "# Wine environment for BC Server" >> /root/.bashrc && \
+    echo "if [ -f /home/wine-env.sh ]; then" >> /root/.bashrc && \
+    echo "    source /home/wine-env.sh >/dev/null 2>&1" >> /root/.bashrc && \
+    echo "fi" >> /root/.bashrc
 
 # Initialize Wine prefix
 RUN wineboot --init && \

@@ -1,0 +1,1153 @@
+diff --git a/dlls/httpapi/httpapi_main.c b/dlls/httpapi/httpapi_main.c
+index 28d67c98333..7f077ea7510 100644
+--- a/dlls/httpapi/httpapi_main.c
++++ b/dlls/httpapi/httpapi_main.c
+@@ -25,6 +25,48 @@
+ #include "wine/debug.h"
+ #include "wine/list.h"
+ 
++/* Define missing HTTP constants */
++#ifndef FILE_DEVICE_HTTP
++#define FILE_DEVICE_HTTP 0x00000037
++#endif
++
++#ifndef CTL_CODE
++#define CTL_CODE(DeviceType, Function, Method, Access) \
++    (((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))
++#endif
++
++#ifndef METHOD_NEITHER
++#define METHOD_NEITHER 3
++#endif
++
++#ifndef FILE_ANY_ACCESS
++#define FILE_ANY_ACCESS 0
++#endif
++
++#ifndef IOCTL_HTTP_SHUTDOWN_QUEUE
++#define IOCTL_HTTP_SHUTDOWN_QUEUE CTL_CODE(FILE_DEVICE_HTTP, 13, METHOD_NEITHER, FILE_ANY_ACCESS)
++#endif
++
++#ifndef IOCTL_HTTP_WAIT_FOR_DISCONNECT
++#define IOCTL_HTTP_WAIT_FOR_DISCONNECT CTL_CODE(FILE_DEVICE_HTTP, 14, METHOD_NEITHER, FILE_ANY_ACCESS)
++#endif
++
++#ifndef IOCTL_HTTP_CANCEL_REQUEST
++#define IOCTL_HTTP_CANCEL_REQUEST CTL_CODE(FILE_DEVICE_HTTP, 15, METHOD_NEITHER, FILE_ANY_ACCESS)
++#endif
++
++/* Define HTTP performance counter IDs */
++typedef enum _HTTP_PERFORMANCE_COUNTER_ID {
++    HttpPerfCounterAllRequests,
++    HttpPerfCounterUriRequests,
++    HttpPerfCounterAllConnections,
++    HttpPerfCounterActiveConnections,
++    HttpPerfCounterConnectionAttempts,
++    HttpPerfCounterFlushesCount,
++    HttpPerfCounterConnections,
++    HttpPerfCounterMaxConnections
++} HTTP_PERFORMANCE_COUNTER_ID;
++
+ WINE_DEFAULT_DEBUG_CHANNEL(http);
+ 
+ /***********************************************************************
+@@ -48,32 +90,52 @@ ULONG WINAPI HttpInitialize(HTTPAPI_VERSION version, ULONG flags, void *reserved
+     TRACE("version %u.%u, flags %#lx, reserved %p.\n", version.HttpApiMajorVersion,
+             version.HttpApiMinorVersion, flags, reserved);
+ 
+-    if (flags & ~HTTP_INITIALIZE_SERVER)
++    if ((version.HttpApiMajorVersion != 1 && version.HttpApiMajorVersion != 2)
++            || version.HttpApiMinorVersion)
++        return ERROR_REVISION_MISMATCH;
++
++    if (flags & ~(HTTP_INITIALIZE_SERVER | HTTP_INITIALIZE_CONFIG))
+     {
+-        FIXME("Unhandled flags %#lx.\n", flags);
++        FIXME("Unhandled flags %#lx.\n", flags & ~(HTTP_INITIALIZE_SERVER | HTTP_INITIALIZE_CONFIG));
+         return ERROR_SUCCESS;
+     }
+ 
+-    if (!(manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT)))
+-        return GetLastError();
++    if (reserved)
++        WARN("Reserved parameter is not NULL (%p)\n", reserved);
+ 
+-    if (!(service = OpenServiceW(manager, L"http", SERVICE_START)))
++    if (flags & HTTP_INITIALIZE_SERVER)
+     {
+-        ERR("Failed to open HTTP service, error %lu.\n", GetLastError());
++        if (!(manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT)))
++            return GetLastError();
++
++        if (!(service = OpenServiceW(manager, L"http", SERVICE_START)))
++        {
++            ERR("Failed to open HTTP service, error %lu.\n", GetLastError());
++            CloseServiceHandle(manager);
++            return GetLastError();
++        }
++
++        if (!StartServiceW(service, 0, NULL) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING)
++        {
++            ERR("Failed to start HTTP service, error %lu.\n", GetLastError());
++            CloseServiceHandle(service);
++            CloseServiceHandle(manager);
++            return GetLastError();
++        }
++
++        CloseServiceHandle(service);
+         CloseServiceHandle(manager);
+-        return GetLastError();
+     }
+ 
+-    if (!StartServiceW(service, 0, NULL) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING)
++    if (flags & HTTP_INITIALIZE_CONFIG)
+     {
+-        ERR("Failed to start HTTP service, error %lu.\n", GetLastError());
+-        CloseServiceHandle(service);
+-        CloseServiceHandle(manager);
+-        return GetLastError();
++        /* HTTP_INITIALIZE_CONFIG is used to initialize configuration APIs.
++         * On Windows, this would set up access to the HTTP Server API configuration store.
++         * For Wine, we don't need to do anything special here as configuration
++         * functions are already available. */
++        TRACE("HTTP_INITIALIZE_CONFIG flag set, configuration APIs initialized.\n");
+     }
+ 
+-    CloseServiceHandle(service);
+-    CloseServiceHandle(manager);
+     return ERROR_SUCCESS;
+ }
+ 
+@@ -90,9 +152,80 @@ ULONG WINAPI HttpInitialize(HTTPAPI_VERSION version, ULONG flags, void *reserved
+  *   NO_ERROR if function succeeds, or error code if function fails
+  *
+  */
+-ULONG WINAPI HttpTerminate( ULONG flags, PVOID reserved )
++ULONG WINAPI HttpTerminate(ULONG flags, void *reserved)
+ {
+-    FIXME( "(0x%lx, %p): stub!\n", flags, reserved );
++    TRACE("(0x%lx, %p)\n", flags, reserved);
++
++    if (reserved)
++        WARN("Reserved parameter is not NULL (%p)\n", reserved);
++
++    if (flags & HTTP_INITIALIZE_SERVER)
++    {
++        SC_HANDLE manager, service;
++        SERVICE_STATUS status;
++
++        if (!(manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT)))
++        {
++            ERR("Failed to open SCM, error %lu.\n", GetLastError());
++            /* According to docs, HttpTerminate should not fail often.
++             * We'll return NO_ERROR even if service stop fails,
++             * as the primary purpose is cleanup of client-side resources,
++             * which are minimal in this implementation.
++             */
++            return NO_ERROR;
++        }
++
++        if (!(service = OpenServiceW(manager, L"http", SERVICE_STOP | SERVICE_QUERY_STATUS)))
++        {
++            ERR("Failed to open HTTP service, error %lu.\n", GetLastError());
++            CloseServiceHandle(manager);
++            return NO_ERROR;
++        }
++
++        if (QueryServiceStatus(service, &status))
++        {
++            if (status.dwCurrentState == SERVICE_RUNNING || status.dwCurrentState == SERVICE_PAUSED)
++            {
++                if (!ControlService(service, SERVICE_CONTROL_STOP, &status))
++                {
++                    DWORD err = GetLastError();
++                    /* ERROR_SERVICE_NOT_ACTIVE is acceptable if another process already stopped it. */
++                    if (err != ERROR_SERVICE_NOT_ACTIVE)
++                        ERR("Failed to stop HTTP service, error %lu.\n", err);
++                }
++                else
++                {
++                    TRACE("HTTP service stop request sent.\n");
++                    /* Optionally, wait here for the service to actually stop.
++                     * For now, we just send the request and don't wait.
++                     */
++                }
++            }
++            else
++            {
++                TRACE("HTTP service not running or paused (state %lu).\n", status.dwCurrentState);
++            }
++        }
++        else
++        {
++            ERR("Failed to query HTTP service status, error %lu.\n", GetLastError());
++        }
++
++        CloseServiceHandle(service);
++        CloseServiceHandle(manager);
++    }
++    if (flags & HTTP_INITIALIZE_CONFIG)
++    {
++        /* Clean up configuration-related resources if any.
++         * Currently no specific cleanup needed for Wine. */
++        TRACE("HTTP_INITIALIZE_CONFIG cleanup.\n");
++    }
++    
++    if (flags & ~(HTTP_INITIALIZE_SERVER | HTTP_INITIALIZE_CONFIG))
++    {
++        FIXME("Unhandled flags %#lx.\n", flags & ~(HTTP_INITIALIZE_SERVER | HTTP_INITIALIZE_CONFIG));
++    }
++        
+     return NO_ERROR;
+ }
+ 
+@@ -112,10 +245,10 @@ ULONG WINAPI HttpTerminate( ULONG flags, PVOID reserved )
+  *   NO_ERROR if function succeeds, or error code if function fails
+  *
+  */
+-ULONG WINAPI HttpDeleteServiceConfiguration( HANDLE handle, HTTP_SERVICE_CONFIG_ID type,
+-                 PVOID config, ULONG length, LPOVERLAPPED overlapped )
++ULONG WINAPI HttpDeleteServiceConfiguration(HANDLE handle, HTTP_SERVICE_CONFIG_ID type,
++                 void *config, ULONG length, OVERLAPPED *overlapped)
+ {
+-    FIXME( "(%p, %d, %p, %ld, %p): stub!\n", handle, type, config, length, overlapped );
++    FIXME("(%p, %d, %p, %ld, %p): stub!\n", handle, type, config, length, overlapped);
+     return NO_ERROR;
+ }
+ 
+@@ -138,9 +271,9 @@ ULONG WINAPI HttpDeleteServiceConfiguration( HANDLE handle, HTTP_SERVICE_CONFIG_
+  *   NO_ERROR if function succeeds, or error code if function fails
+  *
+  */
+-ULONG WINAPI HttpQueryServiceConfiguration( HANDLE handle, HTTP_SERVICE_CONFIG_ID type,
+-                 PVOID query, ULONG query_len, PVOID buffer, ULONG buffer_len,
+-                 PULONG data_len, LPOVERLAPPED overlapped )
++ULONG WINAPI HttpQueryServiceConfiguration(HANDLE handle, HTTP_SERVICE_CONFIG_ID type,
++                 void *query, ULONG query_len, void *buffer, ULONG buffer_len,
++                 ULONG *data_len, OVERLAPPED *overlapped)
+ {
+     FIXME( "(%p, %d, %p, %ld, %p, %ld, %p, %p): stub!\n", handle, type, query, query_len,
+             buffer, buffer_len, data_len, overlapped );
+@@ -163,10 +296,10 @@ ULONG WINAPI HttpQueryServiceConfiguration( HANDLE handle, HTTP_SERVICE_CONFIG_I
+  *   NO_ERROR if function succeeds, or error code if function fails
+  *
+  */
+-ULONG WINAPI HttpSetServiceConfiguration( HANDLE handle, HTTP_SERVICE_CONFIG_ID type,
+-                 PVOID config, ULONG length, LPOVERLAPPED overlapped )
++ULONG WINAPI HttpSetServiceConfiguration(HANDLE handle, HTTP_SERVICE_CONFIG_ID type,
++                 void *config, ULONG length, OVERLAPPED *overlapped)
+ {
+-    FIXME( "(%p, %d, %p, %ld, %p): stub!\n", handle, type, config, length, overlapped );
++    FIXME("(%p, %d, %p, %ld, %p): stub!\n", handle, type, config, length, overlapped);
+     return NO_ERROR;
+ }
+ 
+@@ -207,7 +340,7 @@ static ULONG add_url(HANDLE queue, const WCHAR *urlW, HTTP_URL_CONTEXT context)
+     int len;
+ 
+     len = WideCharToMultiByte(CP_ACP, 0, urlW, -1, NULL, 0, NULL, NULL);
+-    if (!(params = malloc(offsetof(struct http_add_url_params, url[len]))))
++    if (!(params = malloc(sizeof(struct http_add_url_params) + len)))
+         return ERROR_OUTOFMEMORY;
+     WideCharToMultiByte(CP_ACP, 0, urlW, -1, params->url, len, NULL, NULL);
+     params->context = context;
+@@ -215,7 +348,7 @@ static ULONG add_url(HANDLE queue, const WCHAR *urlW, HTTP_URL_CONTEXT context)
+     ovl.hEvent = (HANDLE)((ULONG_PTR)CreateEventW(NULL, TRUE, FALSE, NULL) | 1);
+ 
+     if (!DeviceIoControl(queue, IOCTL_HTTP_ADD_URL, params,
+-            offsetof(struct http_add_url_params, url[len]), NULL, 0, NULL, &ovl))
++            sizeof(struct http_add_url_params) + len, NULL, 0, NULL, &ovl))
+         ret = GetLastError();
+     CloseHandle(ovl.hEvent);
+     free(params);
+@@ -229,6 +362,15 @@ ULONG WINAPI HttpAddUrl(HANDLE queue, const WCHAR *url, void *reserved)
+ {
+     TRACE("queue %p, url %s, reserved %p.\n", queue, debugstr_w(url), reserved);
+ 
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!url)
++        return ERROR_INVALID_PARAMETER;
++
++    if (reserved)
++        WARN("Reserved parameter is not NULL (%p)\n", reserved);
++
+     return add_url(queue, url, 0);
+ }
+ 
+@@ -262,6 +404,9 @@ ULONG WINAPI HttpRemoveUrl(HANDLE queue, const WCHAR *url)
+ 
+     if (!queue)
+         return ERROR_INVALID_PARAMETER;
++        
++    if (!url)
++        return ERROR_INVALID_PARAMETER;
+ 
+     return remove_url(queue, url);
+ }
+@@ -319,17 +464,22 @@ ULONG WINAPI HttpReceiveRequestEntityBody(HANDLE queue, HTTP_REQUEST_ID id, ULON
+ ULONG WINAPI HttpReceiveHttpRequest(HANDLE queue, HTTP_REQUEST_ID id, ULONG flags,
+         HTTP_REQUEST *request, ULONG size, ULONG *ret_size, OVERLAPPED *ovl)
+ {
+-    struct http_receive_request_params params =
+-    {
+-        .addr = (ULONG_PTR)request,
+-        .id = id,
+-        .flags = flags,
+-        .bits = sizeof(void *) * 8,
+-    };
++    struct http_receive_request_params params;
+     ULONG ret = ERROR_SUCCESS;
+     ULONG local_ret_size;
+     OVERLAPPED sync_ovl;
+ 
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (!request)
++        return ERROR_INVALID_PARAMETER;
++        
++    params.addr = (ULONG_PTR)request;
++    params.id = id;
++    params.flags = flags;
++    params.bits = sizeof(void *) * 8;
++
+     TRACE("queue %p, id %s, flags %#lx, request %p, size %#lx, ret_size %p, ovl %p.\n",
+             queue, wine_dbgstr_longlong(id), flags, request, size, ret_size, ovl);
+ 
+@@ -469,9 +619,11 @@ ULONG WINAPI HttpSendHttpResponse(HANDLE queue, HTTP_REQUEST_ID id, ULONG flags,
+     }
+     len += 2;
+ 
+-    if (!(buffer = malloc(offsetof(struct http_response, buffer[len]))))
++    if (!(buffer = malloc(sizeof(struct http_response) + len)))
+         return ERROR_OUTOFMEMORY;
+     buffer->id = id;
++    buffer->is_body = FALSE;
++    buffer->more_data = !!(flags & HTTP_SEND_RESPONSE_FLAG_MORE_DATA);
+     buffer->response_flags = flags;
+     buffer->len = len;
+     sprintf(buffer->buffer, "HTTP/1.1 %u %.*s\r\n", response->s.StatusCode,
+@@ -509,7 +661,7 @@ ULONG WINAPI HttpSendHttpResponse(HANDLE queue, HTTP_REQUEST_ID id, ULONG flags,
+         ovl = &dummy_ovl;
+ 
+     if (!DeviceIoControl(queue, IOCTL_HTTP_SEND_RESPONSE, buffer,
+-            offsetof(struct http_response, buffer[len]), NULL, 0, NULL, ovl))
++            sizeof(struct http_response) + len, NULL, 0, NULL, ovl))
+         ret = GetLastError();
+ 
+     free(buffer);
+@@ -537,7 +689,7 @@ ULONG WINAPI HttpSendHttpResponse(HANDLE queue, HTTP_REQUEST_ID id, ULONG flags,
+  *   NO_ERROR on success, or an error code on failure.
+  */
+ ULONG WINAPI HttpSendResponseEntityBody(HANDLE queue, HTTP_REQUEST_ID id,
+-       ULONG flags, USHORT entity_chunk_count, PHTTP_DATA_CHUNK entity_chunks,
++       ULONG flags, USHORT entity_chunk_count, HTTP_DATA_CHUNK *entity_chunks,
+        ULONG *ret_size, void *reserved1, ULONG reserved2, OVERLAPPED *ovl,
+        HTTP_LOG_DATA *log_data)
+ {
+@@ -548,6 +700,21 @@ ULONG WINAPI HttpSendResponseEntityBody(HANDLE queue, HTTP_REQUEST_ID id,
+     char *p;
+     USHORT i;
+ 
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (!id)
++        return ERROR_CONNECTION_INVALID;
++        
++    if (entity_chunk_count && !entity_chunks)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (reserved1)
++        WARN("Reserved1 parameter is not NULL (%p)\n", reserved1);
++        
++    if (reserved2)
++        WARN("Reserved2 parameter is not zero (%lu)\n", reserved2);
++
+     TRACE("queue %p, id %s, flags %#lx, entity_chunk_count %u, entity_chunks %p, "
+             "ret_size %p, reserved1 %p, reserved2 %#lx, ovl %p, log_data %p\n",
+             queue, wine_dbgstr_longlong(id), flags, entity_chunk_count, entity_chunks,
+@@ -572,9 +739,11 @@ ULONG WINAPI HttpSendResponseEntityBody(HANDLE queue, HTTP_REQUEST_ID id,
+         len += entity_chunks[i].FromMemory.BufferLength;
+     }
+ 
+-    if (!(buffer = malloc(offsetof(struct http_response, buffer[len]))))
++    if (!(buffer = malloc(sizeof(struct http_response) + len)))
+         return ERROR_OUTOFMEMORY;
+     buffer->id = id;
++    buffer->is_body = TRUE;
++    buffer->more_data = !!(flags & HTTP_SEND_RESPONSE_FLAG_MORE_DATA);
+     buffer->response_flags = flags;
+     buffer->len = len;
+ 
+@@ -594,7 +763,7 @@ ULONG WINAPI HttpSendResponseEntityBody(HANDLE queue, HTTP_REQUEST_ID id,
+     }
+ 
+     if (!DeviceIoControl(queue, IOCTL_HTTP_SEND_RESPONSE, buffer,
+-            offsetof(struct http_response, buffer[len]), NULL, 0, NULL, ovl))
++            sizeof(struct http_response) + len, NULL, 0, NULL, ovl))
+         ret = GetLastError();
+ 
+     free(buffer);
+@@ -614,6 +783,9 @@ static struct list url_groups = LIST_INIT(url_groups);
+ static struct url_group *get_url_group(HTTP_URL_GROUP_ID id)
+ {
+     struct url_group *group;
++    
++    if (!id) return NULL;
++    
+     LIST_FOR_EACH_ENTRY(group, &url_groups, struct url_group, entry)
+     {
+         if ((HTTP_URL_GROUP_ID)(ULONG_PTR)group == id)
+@@ -633,6 +805,9 @@ static struct list server_sessions = LIST_INIT(server_sessions);
+ static struct server_session *get_server_session(HTTP_SERVER_SESSION_ID id)
+ {
+     struct server_session *session;
++    
++    if (!id) return NULL;
++    
+     LIST_FOR_EACH_ENTRY(session, &server_sessions, struct server_session, entry)
+     {
+         if ((HTTP_SERVER_SESSION_ID)(ULONG_PTR)session == id)
+@@ -738,16 +913,33 @@ ULONG WINAPI HttpCloseUrlGroup(HTTP_URL_GROUP_ID id)
+  */
+ ULONG WINAPI HttpSetUrlGroupProperty(HTTP_URL_GROUP_ID id, HTTP_SERVER_PROPERTY property, void *value, ULONG length)
+ {
+-    struct url_group *group = get_url_group(id);
++    struct url_group *group;
+ 
+     TRACE("id %s, property %u, value %p, length %lu.\n",
+             wine_dbgstr_longlong(id), property, value, length);
+ 
++    if (!value)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!(group = get_url_group(id)))
++        return ERROR_INVALID_PARAMETER;
++
+     switch (property)
+     {
++        case HttpServerAuthenticationProperty:
++        {
++            /* Authentication property configuration. This would typically include
++             * authentication schemes, realm, domains, etc.
++             * For now, we accept the settings and return success. */
++            TRACE("Authentication property set, length %lu.\n", length);
++            return ERROR_SUCCESS;
++        }
+         case HttpServerBindingProperty:
+         {
+             const HTTP_BINDING_INFO *info = value;
++            
++            if (length < sizeof(HTTP_BINDING_INFO))
++                return ERROR_INSUFFICIENT_BUFFER;
+ 
+             TRACE("Binding to queue %p.\n", info->RequestQueueHandle);
+             group->queue = info->RequestQueueHandle;
+@@ -758,6 +950,27 @@ ULONG WINAPI HttpSetUrlGroupProperty(HTTP_URL_GROUP_ID id, HTTP_SERVER_PROPERTY
+         case HttpServerLoggingProperty:
+             WARN("Ignoring logging property.\n");
+             return ERROR_SUCCESS;
++        case HttpServerQosProperty:
++        {
++            const HTTP_QOS_SETTING_INFO *qos_info = value;
++            
++            if (length < sizeof(HTTP_QOS_SETTING_INFO))
++                return ERROR_INSUFFICIENT_BUFFER;
++                
++            TRACE("QoS property set, QosType %u.\n", qos_info->QosType);
++            /* QoS settings are not implemented in Wine's HTTP.sys driver yet.
++             * Return success to allow applications to continue. */
++            return ERROR_SUCCESS;
++        }
++        case HttpServerTimeoutsProperty:
++        {
++            /* The timeout property structure contains various timeout values like:
++             * EntityBodyTimeout, DrainEntityBodyTimeout, RequestQueueTimeout,
++             * IdleConnectionTimeout, HeaderWaitTimeout, MinSendRate.
++             * For now, we just accept the settings and return success. */
++            TRACE("Timeouts property set, length %lu.\n", length);
++            return ERROR_SUCCESS;
++        }
+         default:
+             FIXME("Unhandled property %u.\n", property);
+             return ERROR_CALL_NOT_IMPLEMENTED;
+@@ -770,12 +983,21 @@ ULONG WINAPI HttpSetUrlGroupProperty(HTTP_URL_GROUP_ID id, HTTP_SERVER_PROPERTY
+ ULONG WINAPI HttpAddUrlToUrlGroup(HTTP_URL_GROUP_ID id, const WCHAR *url,
+         HTTP_URL_CONTEXT context, ULONG reserved)
+ {
+-    struct url_group *group = get_url_group(id);
++    struct url_group *group;
+     ULONG ret;
+ 
+     TRACE("id %s, url %s, context %s, reserved %#lx.\n", wine_dbgstr_longlong(id),
+             debugstr_w(url), wine_dbgstr_longlong(context), reserved);
+ 
++    if (!url)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!(group = get_url_group(id)))
++        return ERROR_INVALID_PARAMETER;
++
++    if (reserved)
++        WARN("Reserved parameter is not zero (%lu)\n", reserved);
++
+     if (group->url)
+     {
+         FIXME("Multiple URLs are not handled!\n");
+@@ -801,10 +1023,16 @@ ULONG WINAPI HttpAddUrlToUrlGroup(HTTP_URL_GROUP_ID id, const WCHAR *url,
+  */
+ ULONG WINAPI HttpRemoveUrlFromUrlGroup(HTTP_URL_GROUP_ID id, const WCHAR *url, ULONG flags)
+ {
+-    struct url_group *group = get_url_group(id);
++    struct url_group *group;
+ 
+     TRACE("id %s, url %s, flags %#lx.\n", wine_dbgstr_longlong(id), debugstr_w(url), flags);
+ 
++    if (!url)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!(group = get_url_group(id)))
++        return ERROR_INVALID_PARAMETER;
++
+     if (!group->url)
+         return ERROR_FILE_NOT_FOUND;
+ 
+@@ -820,6 +1048,43 @@ ULONG WINAPI HttpRemoveUrlFromUrlGroup(HTTP_URL_GROUP_ID id, const WCHAR *url, U
+     return ERROR_SUCCESS;
+ }
+ 
++/***********************************************************************
++ *        HttpQueryUrlGroupProperty     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpQueryUrlGroupProperty(HTTP_URL_GROUP_ID id, HTTP_SERVER_PROPERTY property,
++        void *buffer, ULONG length, ULONG *ret_length)
++{
++    struct url_group *group;
++
++    TRACE("id %s, property %u, buffer %p, length %lu, ret_length %p.\n",
++            wine_dbgstr_longlong(id), property, buffer, length, ret_length);
++
++    if (!(group = get_url_group(id)))
++        return ERROR_INVALID_PARAMETER;
++
++    switch (property)
++    {
++        case HttpServerBindingProperty:
++        {
++            HTTP_BINDING_INFO info = {.RequestQueueHandle = group->queue};
++            ULONG size = sizeof(info);
++
++            if (ret_length)
++                *ret_length = size;
++
++            if (length < size)
++                return ERROR_INSUFFICIENT_BUFFER;
++
++            memcpy(buffer, &info, size);
++            return ERROR_SUCCESS;
++        }
++        
++        default:
++            FIXME("Unhandled property %u.\n", property);
++            return ERROR_CALL_NOT_IMPLEMENTED;
++    }
++}
++
+ /***********************************************************************
+  *        HttpCreateRequestQueue     (HTTPAPI.@)
+  */
+@@ -833,6 +1098,13 @@ ULONG WINAPI HttpCreateRequestQueue(HTTPAPI_VERSION version, const WCHAR *name,
+     TRACE("version %u.%u, name %s, sa %p, flags %#lx, handle %p.\n",
+             version.HttpApiMajorVersion, version.HttpApiMinorVersion,
+             debugstr_w(name), sa, flags, handle);
++            
++    if (!handle)
++        return ERROR_INVALID_PARAMETER;
++        
++    if ((version.HttpApiMajorVersion != 1 && version.HttpApiMajorVersion != 2)
++            || version.HttpApiMinorVersion)
++        return ERROR_REVISION_MISMATCH;
+ 
+     if (name)
+         FIXME("Unhandled name %s.\n", debugstr_w(name));
+@@ -843,6 +1115,7 @@ ULONG WINAPI HttpCreateRequestQueue(HTTPAPI_VERSION version, const WCHAR *name,
+     if (sa && sa->bInheritHandle)
+         attr.Attributes |= OBJ_INHERIT;
+     attr.SecurityDescriptor = sa ? sa->lpSecurityDescriptor : NULL;
++    
+     return RtlNtStatusToDosError(NtCreateFile(handle, SYNCHRONIZE, &attr, &iosb, NULL,
+             FILE_ATTRIBUTE_NORMAL, 0, FILE_OPEN, FILE_NON_DIRECTORY_FILE, NULL, 0));
+ }
+@@ -853,11 +1126,50 @@ ULONG WINAPI HttpCreateRequestQueue(HTTPAPI_VERSION version, const WCHAR *name,
+ ULONG WINAPI HttpCloseRequestQueue(HANDLE handle)
+ {
+     TRACE("handle %p.\n", handle);
++    
++    if (!handle)
++        return ERROR_INVALID_PARAMETER;
++        
+     if (!CloseHandle(handle))
+         return GetLastError();
++        
+     return ERROR_SUCCESS;
+ }
+ 
++/***********************************************************************
++ *        HttpShutdownRequestQueue     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpShutdownRequestQueue(HANDLE queue)
++{
++    ULONG ret = ERROR_SUCCESS;
++    OVERLAPPED ovl = {};
++
++    TRACE("queue %p.\n", queue);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    ovl.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
++    if (!ovl.hEvent)
++        return GetLastError();
++
++    if (!DeviceIoControl(queue, IOCTL_HTTP_SHUTDOWN_QUEUE, NULL, 0, NULL, 0, NULL, &ovl))
++    {
++        ret = GetLastError();
++        if (ret == ERROR_IO_PENDING)
++        {
++            /* Wait for the operation to complete */
++            if (WaitForSingleObject(ovl.hEvent, INFINITE) == WAIT_FAILED)
++                ret = GetLastError();
++            else
++                ret = ERROR_SUCCESS;
++        }
++    }
++
++    CloseHandle(ovl.hEvent);
++    return ret;
++}
++
+ /***********************************************************************
+  *        HttpSetRequestQueueProperty     (HTTPAPI.@)
+  */
+@@ -866,23 +1178,79 @@ ULONG WINAPI HttpSetRequestQueueProperty(HANDLE queue, HTTP_SERVER_PROPERTY prop
+ {
+     FIXME("queue %p, property %u, value %p, length %lu, reserved1 %#lx, reserved2 %p, stub!\n",
+             queue, property, value, length, reserved1, reserved2);
++            
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (!value && length)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (reserved1)
++        WARN("Reserved1 parameter is not zero (%lu)\n", reserved1);
++        
++    if (reserved2)
++        WARN("Reserved2 parameter is not NULL (%p)\n", reserved2);
++        
+     return ERROR_CALL_NOT_IMPLEMENTED;
+ }
+ 
++/***********************************************************************
++ *        HttpQueryRequestQueueProperty     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpQueryRequestQueueProperty(HANDLE queue, HTTP_SERVER_PROPERTY property,
++        void *buffer, ULONG length, ULONG reserved1, ULONG *ret_length, void *reserved2)
++{
++    TRACE("queue %p, property %u, buffer %p, length %lu, reserved1 %#lx, ret_length %p, reserved2 %p.\n",
++            queue, property, buffer, length, reserved1, ret_length, reserved2);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (!buffer && length)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (!ret_length)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (reserved1)
++        WARN("Reserved1 parameter is not zero (%lu)\n", reserved1);
++        
++    if (reserved2)
++        WARN("Reserved2 parameter is not NULL (%p)\n", reserved2);
++
++    switch (property)
++    {
++        default:
++            FIXME("Unhandled property %u.\n", property);
++            return ERROR_CALL_NOT_IMPLEMENTED;
++    }
++}
++
+ /***********************************************************************
+  *        HttpSetServerSessionProperty     (HTTPAPI.@)
+  */
+ ULONG WINAPI HttpSetServerSessionProperty(HTTP_SERVER_SESSION_ID id,
+         HTTP_SERVER_PROPERTY property, void *value, ULONG length)
+ {
++    struct server_session *session;
++    
+     TRACE("id %s, property %u, value %p, length %lu.\n",
+             wine_dbgstr_longlong(id), property, value, length);
++    
++    if (!value && length)
++        return ERROR_INVALID_PARAMETER;
++        
++    if (!(session = get_server_session(id)))
++        return ERROR_INVALID_PARAMETER;
+ 
+     switch (property)
+     {
+         case HttpServerQosProperty:
+         {
+             const HTTP_QOS_SETTING_INFO *info = value;
++            if (length < sizeof(HTTP_QOS_SETTING_INFO))
++                return ERROR_INSUFFICIENT_BUFFER;
++                
+             FIXME("Ignoring QoS setting %u.\n", info->QosType);
+             return ERROR_SUCCESS;
+         }
+@@ -891,3 +1259,391 @@ ULONG WINAPI HttpSetServerSessionProperty(HTTP_SERVER_SESSION_ID id,
+             return ERROR_CALL_NOT_IMPLEMENTED;
+     }
+ }
++
++/***********************************************************************
++ *        HttpQueryServerSessionProperty     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpQueryServerSessionProperty(HTTP_SERVER_SESSION_ID id,
++        HTTP_SERVER_PROPERTY property, void *buffer, ULONG length, ULONG *ret_length)
++{
++    struct server_session *session;
++
++    TRACE("id %s, property %u, buffer %p, length %lu, ret_length %p.\n",
++            wine_dbgstr_longlong(id), property, buffer, length, ret_length);
++
++    if (!buffer && length)
++        return ERROR_INVALID_PARAMETER;
++    
++    if (!ret_length)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!(session = get_server_session(id)))
++        return ERROR_INVALID_PARAMETER;
++
++    switch (property)
++    {
++        case HttpServerQosProperty:
++            FIXME("Unimplemented QoS property query.\n");
++            return ERROR_CALL_NOT_IMPLEMENTED;
++            
++        default:
++            FIXME("Unhandled property %u.\n", property);
++            return ERROR_CALL_NOT_IMPLEMENTED;
++    }
++}
++
++/***********************************************************************
++ *        HttpCancelHttpRequest     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpCancelHttpRequest(HANDLE queue, HTTP_REQUEST_ID id, OVERLAPPED *lpOverlapped)
++{
++    struct http_cancel_request_params params = {
++        .id = id,
++    };
++    OVERLAPPED local_ovl;
++    ULONG ret = ERROR_SUCCESS;
++    DWORD bytes_returned;
++    OVERLAPPED *current_ovl = lpOverlapped;
++
++    TRACE("queue %p, id %s, lpOverlapped %p.\n", queue, wine_dbgstr_longlong(id), lpOverlapped);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!id)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!current_ovl) /* Synchronous cancel operation */
++    {
++        memset(&local_ovl, 0, sizeof(local_ovl));
++        local_ovl.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
++        if (!local_ovl.hEvent)
++            return GetLastError();
++        current_ovl = &local_ovl;
++    }
++
++    /* The IOCTL_HTTP_CANCEL_REQUEST takes cancel request params as input */
++    if (!DeviceIoControl(queue, IOCTL_HTTP_CANCEL_REQUEST, &params, sizeof(params),
++                         NULL, 0, &bytes_returned, current_ovl))
++    {
++        ret = GetLastError();
++    }
++
++    if (!lpOverlapped && ret == ERROR_IO_PENDING)
++    {
++        if (GetOverlappedResult(queue, current_ovl, &bytes_returned, TRUE))
++            ret = ERROR_SUCCESS;
++        else
++            ret = GetLastError();
++    }
++
++    if (!lpOverlapped && local_ovl.hEvent)
++        CloseHandle(local_ovl.hEvent);
++    
++    return (ret == ERROR_SUCCESS) ? NO_ERROR : ret;
++}
++
++/***********************************************************************
++ *        HttpControlService     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpControlService(HTTP_SERVICE_CONFIG_ID config_id, ULONG control_code, void *context)
++{
++    SC_HANDLE manager, service;
++    SERVICE_STATUS status;
++    DWORD err; /* For GetLastError() */
++    DWORD query_err; /* For GetLastError() from QueryServiceStatus */
++
++    TRACE("config_id %d, control_code %#lx, context %p.\n", config_id, control_code, context);
++
++    /* MSDN implies context is only for HttpServiceConfigSSLCertInfo and HttpServiceConfigUrlAclInfo,
++     * and is a pointer to the respective structure. For stopping the service, it's not used.
++     * We'll ignore context for now, but real implementation might need to validate it based on config_id.
++     */
++
++    if (config_id >= HttpServiceConfigMax) /* HttpServiceConfigMax is the upper bound for valid enum values */
++        return ERROR_INVALID_PARAMETER;
++
++    switch (control_code)
++    {
++        case SERVICE_CONTROL_STOP:
++        {
++            /* Typically, HttpServiceConfigHttpSys would be the relevant config_id for controlling the http service itself.
++             * However, the API allows any valid config_id. We'll proceed assuming stopping is generic.
++             */
++            TRACE("Attempting to stop HTTP service.\n");
++
++            if (!(manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT)))
++            {
++                err = GetLastError();
++                ERR("Failed to open SCM, error %lu.\n", err);
++                return err;
++            }
++
++            if (!(service = OpenServiceW(manager, L"http", SERVICE_STOP | SERVICE_QUERY_STATUS)))
++            {
++                err = GetLastError();
++                ERR("Failed to open HTTP service, error %lu.\n", err);
++                CloseServiceHandle(manager);
++                return err;
++            }
++
++            if (QueryServiceStatus(service, &status))
++            {
++                if (status.dwCurrentState == SERVICE_RUNNING || status.dwCurrentState == SERVICE_PAUSED)
++                {
++                    if (!ControlService(service, SERVICE_CONTROL_STOP, &status))
++                    {
++                        err = GetLastError();
++                        if (err != ERROR_SERVICE_NOT_ACTIVE) /* Acceptable if already stopped */
++                        {
++                            ERR("Failed to stop HTTP service, error %lu.\n", err);
++                            CloseServiceHandle(service);
++                            CloseServiceHandle(manager);
++                            return err;
++                        }
++                         TRACE("HTTP service was not active or already stopped (err %lu).\n", err);
++                    }
++                    else
++                    {
++                        TRACE("HTTP service stop request sent.\n");
++                    }
++                }
++                else
++                {
++                    TRACE("HTTP service not running or paused (state %lu), no stop needed.\n", status.dwCurrentState);
++                }
++            }
++            else
++            {
++                query_err = GetLastError();
++                ERR("Failed to query HTTP service status, error %lu.\n", query_err);
++                /* Continue to close handles, but return error */
++                CloseServiceHandle(service);
++                CloseServiceHandle(manager);
++                return query_err;
++            }
++
++            CloseServiceHandle(service);
++            CloseServiceHandle(manager);
++            return NO_ERROR;
++        }
++        case SERVICE_CONTROL_PAUSE:
++        case SERVICE_CONTROL_CONTINUE:
++            FIXME("Service control %lu is not implemented for http.sys.\n", control_code);
++            return ERROR_CALL_NOT_IMPLEMENTED;
++        default:
++            FIXME("Unknown control code %lu.\n", control_code);
++            return ERROR_INVALID_PARAMETER;
++    }
++}
++
++/***********************************************************************
++ *        HttpAddFragmentToCache     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpAddFragmentToCache(HANDLE cache, const WCHAR *fragment_name, const HTTP_DATA_CHUNK *fragments,
++        ULONG fragment_count, HTTP_CACHE_POLICY *cache_policy, OVERLAPPED *overlapped)
++{
++    TRACE("cache %p, fragment_name %s, fragments %p, fragment_count %lu, cache_policy %p, overlapped %p.\n",
++            cache, debugstr_w(fragment_name), fragments, fragment_count, cache_policy, overlapped);
++
++    if (!cache)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!fragment_name)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!fragments && fragment_count)
++        return ERROR_INVALID_PARAMETER;
++
++    FIXME("Not implemented - response cache not supported.\n");
++    return ERROR_FILE_NOT_FOUND;
++}
++
++/***********************************************************************
++ *        HttpFlushResponseCache     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpFlushResponseCache(HANDLE queue, const WCHAR *url, ULONG flags, OVERLAPPED *overlapped)
++{
++    TRACE("queue %p, url %s, flags %#lx, overlapped %p.\n", queue, debugstr_w(url), flags, overlapped);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!url)
++        return ERROR_INVALID_PARAMETER;
++
++    if (flags)
++        FIXME("Unhandled flags %#lx.\n", flags);
++
++    FIXME("Not implemented - response cache not supported.\n");
++    return NO_ERROR;
++}
++
++/***********************************************************************
++ *        HttpGetCounters     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpGetCounters(HANDLE queue, HTTP_PERFORMANCE_COUNTER_ID counter_id, 
++                            void *buffer, ULONG buffer_length, ULONG reserved)
++{
++    TRACE("queue %p, counter_id %d, buffer %p, buffer_length %lu, reserved %lu.\n", 
++          queue, counter_id, buffer, buffer_length, reserved);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!buffer)
++        return ERROR_INVALID_PARAMETER;
++
++    if (reserved)
++        WARN("Reserved parameter is not zero (%lu)\n", reserved);
++
++    switch (counter_id)
++    {
++        case HttpPerfCounterAllRequests:
++        case HttpPerfCounterUriRequests:
++        case HttpPerfCounterAllConnections:
++        case HttpPerfCounterActiveConnections:
++            FIXME("Unsupported counter %d.\n", counter_id);
++            return ERROR_FILE_NOT_FOUND;
++        default:
++            FIXME("Unknown counter %d.\n", counter_id);
++            return ERROR_INVALID_PARAMETER;
++    }
++}
++
++/***********************************************************************
++ *        HttpReadFragmentFromCache     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpReadFragmentFromCache(HANDLE cache, const WCHAR *url, HTTP_BYTE_RANGE *byte_range,
++                                      void *buffer, ULONG *buffer_length, OVERLAPPED *overlapped)
++{
++    TRACE("cache %p, url %s, byte_range %p, buffer %p, buffer_length %p, overlapped %p.\n",
++          cache, debugstr_w(url), byte_range, buffer, buffer_length, overlapped);
++
++    if (!cache)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!url)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!buffer)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!buffer_length)
++        return ERROR_INVALID_PARAMETER;
++
++    FIXME("Not implemented - response cache not supported.\n");
++    return ERROR_FILE_NOT_FOUND;
++}
++
++/***********************************************************************
++ *        HttpWaitForDisconnect     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpWaitForDisconnect(HANDLE queue, HTTP_CONNECTION_ID connection_id, OVERLAPPED *overlapped)
++{
++    struct http_wait_for_disconnect_params params = {
++        .id = connection_id,
++    };
++    ULONG ret = ERROR_SUCCESS;
++    OVERLAPPED local_ovl;
++    OVERLAPPED *povl = overlapped;
++    DWORD bytes_returned;
++
++    TRACE("queue %p, connection_id %s, overlapped %p.\n",
++          queue, wine_dbgstr_longlong(connection_id), overlapped);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!connection_id)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!povl)
++    {
++        memset(&local_ovl, 0, sizeof(local_ovl));
++        local_ovl.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
++        if (!local_ovl.hEvent)
++            return GetLastError();
++        povl = &local_ovl;
++    }
++
++    if (!DeviceIoControl(queue, IOCTL_HTTP_WAIT_FOR_DISCONNECT, &params, sizeof(params),
++                         NULL, 0, &bytes_returned, povl))
++    {
++        ret = GetLastError();
++    }
++
++    if (!overlapped && ret == ERROR_IO_PENDING)
++    {
++        if (GetOverlappedResult(queue, povl, &bytes_returned, TRUE))
++            ret = ERROR_SUCCESS;
++        else
++            ret = GetLastError();
++    }
++
++    if (!overlapped && local_ovl.hEvent)
++        CloseHandle(local_ovl.hEvent);
++
++    if (ret == ERROR_CONNECTION_INVALID)
++        return NO_ERROR;
++
++    return (ret == ERROR_SUCCESS) ? NO_ERROR : ret;
++}
++
++/***********************************************************************
++ *        HttpWaitForDisconnectEx     (HTTPAPI.@)
++ */
++ULONG WINAPI HttpWaitForDisconnectEx(HANDLE queue, HTTP_CONNECTION_ID connection_id,
++                                     ULONG reserved, OVERLAPPED *overlapped)
++{
++    struct http_wait_for_disconnect_params params = {
++        .id = connection_id,
++    };
++    ULONG ret = ERROR_SUCCESS;
++    OVERLAPPED local_ovl;
++    OVERLAPPED *povl = overlapped;
++    DWORD bytes_returned;
++
++    TRACE("queue %p, connection_id %s, reserved %lu, overlapped %p.\n",
++          queue, wine_dbgstr_longlong(connection_id), reserved, overlapped);
++
++    if (!queue)
++        return ERROR_INVALID_PARAMETER;
++
++    if (!connection_id)
++        return ERROR_INVALID_PARAMETER;
++
++    if (reserved)
++        WARN("Reserved parameter is not zero (%lu)\n", reserved);
++
++    if (!povl)
++    {
++        memset(&local_ovl, 0, sizeof(local_ovl));
++        local_ovl.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
++        if (!local_ovl.hEvent)
++            return GetLastError();
++        povl = &local_ovl;
++    }
++
++    if (!DeviceIoControl(queue, IOCTL_HTTP_WAIT_FOR_DISCONNECT, &params, sizeof(params),
++                         NULL, 0, &bytes_returned, povl))
++    {
++        ret = GetLastError();
++    }
++
++    if (!overlapped && ret == ERROR_IO_PENDING)
++    {
++        if (GetOverlappedResult(queue, povl, &bytes_returned, TRUE))
++            ret = ERROR_SUCCESS;
++        else
++            ret = GetLastError();
++    }
++
++    if (!overlapped && local_ovl.hEvent)
++        CloseHandle(local_ovl.hEvent);
++    
++    if (ret == ERROR_CONNECTION_INVALID)
++        return NO_ERROR;
++
++    return (ret == ERROR_SUCCESS) ? NO_ERROR : ret;
++}
+diff --git a/include/wine/http.h b/include/wine/http.h
+index 4a44392bdbf..e7417f1bce2 100644
+--- a/include/wine/http.h
++++ b/include/wine/http.h
+@@ -23,11 +23,13 @@
+ #include <http.h>
+ #include <winioctl.h>
+ 
+-#define IOCTL_HTTP_ADD_URL          CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_REMOVE_URL       CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_RECEIVE_REQUEST  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_SEND_RESPONSE    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_RECEIVE_BODY     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_ADD_URL              CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_REMOVE_URL           CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_RECEIVE_REQUEST      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_SEND_RESPONSE        CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_RECEIVE_BODY         CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_WAIT_FOR_DISCONNECT  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_CANCEL_REQUEST       CTL_CODE(FILE_DEVICE_UNKNOWN, 0x806, METHOD_BUFFERED, 0)
+ 
+ struct http_add_url_params
+ {
+@@ -46,6 +48,8 @@ struct http_receive_request_params
+ struct http_response
+ {
+     HTTP_REQUEST_ID id;
++    BOOL is_body;
++    BOOL more_data;
+     ULONG response_flags;
+     int len;
+     char buffer[1];
+@@ -57,4 +61,14 @@ struct http_receive_body_params
+     ULONG bits;
+ };
+ 
++struct http_wait_for_disconnect_params
++{
++    HTTP_REQUEST_ID id;
++};
++
++struct http_cancel_request_params
++{
++    HTTP_REQUEST_ID id;
++};
++
+ #endif

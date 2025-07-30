@@ -4,20 +4,22 @@ set -e
 
 echo "Starting Business Central Container using BC4Ubuntu approach..."
 
-# Set default environment variables if not provided
-export SA_PASSWORD=${SA_PASSWORD:-"YourPassword123"}
-
-# Generate configuration template if it doesn't exist
-if [ ! -f "/home/bcserver/CustomSettings.config.template" ]; then
-    echo "Creating configuration template..."
-    pwsh /home/create-config-template.ps1
+# Source Wine environment
+if [ -f /home/wine-env.sh ]; then
+    source /home/wine-env.sh
 fi
+
+# Set default environment variables if not provided
+export SA_PASSWORD=${SA_PASSWORD:-"P@ssw0rd123!"}
+
+# Skip template generation - use the provided CustomSettings.config
+echo "Using provided CustomSettings.config (template generation skipped)"
 
 # Setup BC encryption keys using bash script
-if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
-    echo "Setting up BC encryption..."
-    /home/setup-bc-encryption.sh
-fi
+# if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
+#     echo "Setting up BC encryption..."
+#     /home/setup-bc-encryption.sh
+# fi
 
 # Check if this is first run and initialize Wine if needed
 if [ ! -f "/home/.wine-initialized" ]; then
@@ -28,14 +30,22 @@ if [ ! -f "/home/.wine-initialized" ]; then
 fi
 
 # Restore database if needed
-export PATH="$PATH:/opt/mssql-tools18/bin"
-if command -v sqlcmd >/dev/null 2>&1; then
-    echo "Checking database..."
-    /home/restore-database.sh
-else
-    echo "sqlcmd not found, skipping database restore"
-    echo "Database must be restored manually"
-fi
+# export PATH="$PATH:/opt/mssql-tools18/bin"
+# if command -v sqlcmd >/dev/null 2>&1; then
+#     echo "Checking database..."
+#     /home/restore-database.sh
+# else
+#     echo "sqlcmd not found, skipping database restore"
+#     echo "Database must be restored manually"
+# fi
+
+# Setup BC Reporting Service (Proof of Concept)
+# Disabled for BC v26 - SideServices directory not available
+# if [ -f "/home/setup-reporting-service-poc.sh" ]; then
+#     echo "Setting up BC Reporting Service..."
+#     /home/setup-reporting-service-poc.sh
+#     echo "Reporting service setup completed"
+# fi
 
 # Check if BC_AUTOSTART is set to false
 if [ "${BC_AUTOSTART}" = "false" ]; then

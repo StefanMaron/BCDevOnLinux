@@ -44,6 +44,7 @@ echo ""
 BUILD_ONLY=false
 NO_CACHE=false
 REBUILD_BC_ONLY=false
+NO_SQL=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -59,6 +60,10 @@ while [[ $# -gt 0 ]]; do
             REBUILD_BC_ONLY=true
             shift
             ;;
+        --no-sql)
+            NO_SQL=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -66,7 +71,14 @@ while [[ $# -gt 0 ]]; do
             echo "  --build-only      Only build the image, don't start containers"
             echo "  --no-cache        Build without using Docker cache"
             echo "  --rebuild-bc-only Rebuild only the BC stage (keeps Wine cache)"
+            echo "  --no-sql          Use external SQL server (no SQL container)"
             echo "  --help            Show this help message"
+            echo ""
+            echo "External SQL usage:"
+            echo "  When using --no-sql, set these environment variables:"
+            echo "    SQL_SERVER=<your-sql-server-hostname>"
+            echo "    SQL_SERVER_PORT=<port> (default: 1433)"
+            echo "    SA_PASSWORD=<sql-password>"
             exit 0
             ;;
         *)
@@ -76,8 +88,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Determine which compose file to use
+if [ "$NO_SQL" = true ]; then
+    COMPOSE_FILE="compose-wine-custom-no-sql.yml"
+    echo -e "${YELLOW}Using external SQL server configuration${NC}"
+    
+    # Check if SQL_SERVER is set
+    if [ -z "$SQL_SERVER" ]; then
+        echo -e "${RED}Warning: SQL_SERVER environment variable not set!${NC}"
+        echo "Set it with: export SQL_SERVER=<your-sql-server-hostname>"
+    fi
+else
+    COMPOSE_FILE="compose-wine-custom.yml"
+fi
+
 # Build command
-BUILD_CMD="docker compose -f compose-wine-custom.yml build"
+BUILD_CMD="docker compose -f $COMPOSE_FILE build"
 
 if [ "$NO_CACHE" = true ]; then
     BUILD_CMD="$BUILD_CMD --no-cache"
@@ -103,18 +129,25 @@ if [ $? -eq 0 ]; then
     
     if [ "$BUILD_ONLY" = false ]; then
         echo -e "${YELLOW}Starting containers...${NC}"
-        docker compose -f compose-wine-custom.yml up -d
+        docker compose -f $COMPOSE_FILE up -d
         
         echo -e "${GREEN}Containers started!${NC}"
         echo ""
         echo "To view logs:"
-        echo "  docker compose -f compose-wine-custom.yml logs -f bc"
+        echo "  docker compose -f $COMPOSE_FILE logs -f bc"
         echo ""
         echo "To check Wine version:"
-        echo "  docker compose -f compose-wine-custom.yml exec bc wine --version"
+        echo "  docker compose -f $COMPOSE_FILE exec bc wine --version"
         echo ""
-        echo "To test locale fixes:"
-        echo "  docker compose -f compose-wine-custom.yml exec bc /home/test-wine-locale.sh"
+        
+        if [ "$NO_SQL" = true ]; then
+            echo ""
+            echo -e "${YELLOW}External SQL Configuration:${NC}"
+            echo "  SQL_SERVER=${SQL_SERVER:-not set}"
+            echo "  SQL_SERVER_PORT=${SQL_SERVER_PORT:-1433}"
+            echo ""
+            echo "Make sure your external SQL server is accessible from this container."
+        fi
     fi
 else
     echo -e "${RED}Build failed!${NC}"

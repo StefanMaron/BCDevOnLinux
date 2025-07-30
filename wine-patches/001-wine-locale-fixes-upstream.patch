@@ -1,0 +1,58 @@
+diff --git a/nls/locale.nls b/nls/locale.nls
+index e46df56c6ab..bb0feffe3b4 100644
+Binary files a/nls/locale.nls and b/nls/locale.nls differ
+diff --git a/tools/make_unicode b/tools/make_unicode
+index 0542d0f63a2..8504a5bdcc6 100755
+--- a/tools/make_unicode
++++ b/tools/make_unicode
+@@ -4763,10 +4763,48 @@ sub build_locale_data()
+             $senglanguage .= " ($engscript)" if $engscript;
+             $snativelangname .= " ($nativescript)" if $nativescript;
+         }
+-        my $sengdisplayname = $neutral ? $senglanguage : "$senglanguage ($sengcountry)";
+-        my $snativedisplayname = $neutral ? $snativelangname : "$snativelangname ($snativectryname)";
++        # Extract variant from locale name (e.g., "valencia" from "ca-ES-valencia")
++        # Only consider it a variant if it's not a known script code and not a 2-letter territory
++        my $variant = "";
++        if ($sname && $sname =~ /^[^-]+-([^-]+)-(.+)$/) {
++            my $second_part = $1;
++            my $third_part = $2;
++            # If second part is a 2-letter territory and third part is not a 2-letter territory,
++            # then third part is likely a variant
++            if (length($second_part) == 2 && length($third_part) > 2 && $third_part !~ /^[A-Z][a-z]{3}$/) {
++                $variant = $third_part;
++            }
++        }
++        
++        # Build display name with variant
++        my $sengdisplayname;
++        my $snativedisplayname;
++        if ($variant) {
++            # Capitalize first letter of variant for display
++            my $display_variant = ucfirst($variant);
++            $sengdisplayname = $neutral ? "$senglanguage ($display_variant)" : "$senglanguage ($sengcountry, $display_variant)";
++            $snativedisplayname = $neutral ? "$snativelangname ($display_variant)" : "$snativelangname ($snativectryname, $display_variant)";
++        } else {
++            $sengdisplayname = $neutral ? $senglanguage : "$senglanguage ($sengcountry)";
++            $snativedisplayname = $neutral ? $snativelangname : "$snativelangname ($snativectryname)";
++        }
+         $sengdisplayname =~ s/\) \(/, /;
+         $snativedisplayname =~ s/\) \(/, /;
++        
++        # Windows-specific display name overrides to fix duplicate names
++        my %display_overrides = (
++            0x0403 => { eng => "Catalan (Catalan)", native => "català (català)" },           # ca-ES
++            0x042d => { eng => "Basque (Basque)", native => "euskara (euskara)" },         # eu-ES
++            0x0456 => { eng => "Galician (Galician)", native => "galego (galego)" },       # gl-ES
++            0x040a => { eng => "Spanish (Spain, Traditional Sort)", native => "español (España, alfabetización tradicional)" }, # es-ES_tradnl
++            0x0c0a => { eng => "Spanish (Spain, International Sort)", native => "español (España, alfabetización internacional)" }, # es-ES
++            0x0803 => { eng => "Valencian (Spain)", native => "valencià (Espanya)" },      # ca-ES-valencia
++        );
++        
++        if (defined $loc->{lcid} && exists $display_overrides{$loc->{lcid}}) {
++            $sengdisplayname = $display_overrides{$loc->{lcid}}->{eng};
++            $snativedisplayname = $display_overrides{$loc->{lcid}}->{native};
++        }
+         my $sscripts = locale_entry( $loc, "sscripts", $script ) || xml_query( $suppl, "/supplementalData/languageData/language[\@type='$language' and not(\@alt)]/\@scripts" );
+         $sscripts = (join ";", (sort split / /, ($sscripts || "Latn"))) . ";";
+         my $ireadinglayout = locale_entry( $loc, "ireadinglayout", 0 );

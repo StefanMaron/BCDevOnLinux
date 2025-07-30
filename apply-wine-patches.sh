@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 WINE_SRC_DIR="$1"
 PATCHES_DIR="$2"

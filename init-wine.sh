@@ -15,6 +15,7 @@ export WINEARCH=win64
 # export WINE_SKIP_GECKO_INSTALLATION=1
 # export WINE_SKIP_MONO_INSTALLATION=1
 export DISPLAY=":0"
+export WINEDEBUG=-winediag
 
 # Virtual display will be started only when needed for specific Wine operations
 
@@ -46,9 +47,23 @@ Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX &
 XVFB_PID=$!
 sleep 3
 
-# Install .NET Desktop Runtime 8.0 via winetricks (BC Server v26 needs this)
-echo "Installing .NET Desktop Runtime 8.0 via winetricks..."
-winetricks prefix=bc1 -q dotnetdesktop8
+# Install .NET Framework 4.8 first (BC Server v26 needs this for main server)
+echo "Installing .NET Framework 4.8..."
+winetricks prefix=bc1 -q dotnet48
+
+# Wait for .NET Framework installation to settle
+sleep 5
+
+# Install .NET Desktop Runtime 8.0 directly (BC Server v26 needs this)
+echo "Installing .NET Desktop Runtime 8.0..."
+cd /tmp
+wget -q "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.18/windowsdesktop-runtime-8.0.18-win-x64.exe" || {
+    echo "Failed to download .NET Desktop Runtime 8.0"
+    exit 1
+}
+wine windowsdesktop-runtime-8.0.18-win-x64.exe /quiet /install /norestart
+rm -f windowsdesktop-runtime-8.0.18-win-x64.exe
+echo ".NET Desktop Runtime 8.0 installation completed"
 
 # Now install ASP.NET Core 8.0 hosting bundle which BC Server v26 also needs
 echo "Installing ASP.NET Core 8.0 hosting bundle for BC Server v26..."
