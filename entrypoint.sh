@@ -30,14 +30,14 @@ if [ ! -f "/home/.wine-initialized" ]; then
 fi
 
 # Restore database if needed
-# export PATH="$PATH:/opt/mssql-tools18/bin"
-# if command -v sqlcmd >/dev/null 2>&1; then
-#     echo "Checking database..."
-#     /home/restore-database.sh
-# else
-#     echo "sqlcmd not found, skipping database restore"
-#     echo "Database must be restored manually"
-# fi
+export PATH="$PATH:/opt/mssql-tools18/bin"
+if command -v sqlcmd >/dev/null 2>&1; then
+    echo "Checking database..."
+    /home/restore-database.sh
+else
+    echo "sqlcmd not found, skipping database restore"
+    echo "Database must be restored manually"
+fi
 
 # Setup BC Reporting Service (Proof of Concept)
 # Disabled for BC v26 - SideServices directory not available

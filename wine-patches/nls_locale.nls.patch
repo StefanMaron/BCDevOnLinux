@@ -1,0 +1,8 @@
+From: patch-export
+Date: Sun Aug  3 10:35:10 PM CEST 2025
+Subject: Changes to nls/locale.nls
+
+---
+diff --git a/nls/locale.nls b/nls/locale.nls
+index e46df56c6ab..bb0feffe3b4 100644
+Binary files a/nls/locale.nls and b/nls/locale.nls differ

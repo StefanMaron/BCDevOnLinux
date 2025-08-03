@@ -7,14 +7,14 @@ check_wine_dotnet_components() {
     
     echo "Checking Wine prefix for required .NET components..."
     
-    # Check for .NET Framework 4.8
-    echo -n "Checking for .NET Framework 4.8... "
-    if wine reg query "HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full" /v Release 2>/dev/null | grep -q "528049"; then
-        echo "Found"
-    else
-        echo "Missing"
-        missing_components+=(".NET Framework 4.8")
-    fi
+    # # Check for .NET Framework 4.8
+    # echo -n "Checking for .NET Framework 4.8... "
+    # if wine reg query "HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full" /v Release 2>/dev/null | grep -q "528049"; then
+    #     echo "Found"
+    # else
+    #     echo "Missing"
+    #     missing_components+=(".NET Framework 4.8")
+    # fi
     
     # Check for .NET Desktop Runtime 8.0
     echo -n "Checking for .NET Desktop Runtime 8.0... "

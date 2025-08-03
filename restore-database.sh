@@ -13,7 +13,8 @@ if [ -z "$DATABASE_NAME" ] && [ -f "/home/CustomSettings.config" ]; then
     DATABASE_NAME=$(grep -oP '(?<=DatabaseName" value=")[^"]+' /home/CustomSettings.config 2>/dev/null || echo "")
 fi
 DATABASE_NAME="${DATABASE_NAME:-CRONUS}"
-BACKUP_FILE="/home/bcartifacts/w1/BusinessCentral-W1.bak"
+BACKUP_FILE="/home/bcartifacts/BusinessCentral-W1.bak"
+BACKUP_FILE_TEMP="/tmp/BusinessCentral-W1.bak"
 
 # Add SQL tools to PATH if not already there
 export PATH="$PATH:/opt/mssql-tools18/bin"
@@ -61,11 +62,14 @@ if [ ! -f "$BACKUP_FILE" ]; then
     exit 0
 fi
 
+# No need to copy, use the shared volume path directly
+BACKUP_FILE_SQL="/bc_artifacts/BusinessCentral-W1.bak"
+
 echo "Restoring database from backup..."
 
 # Get logical file names from backup
 echo "Reading backup file information..."
-FILELISTONLY=$(execute_sql "RESTORE FILELISTONLY FROM DISK = N'$BACKUP_FILE'")
+FILELISTONLY=$(execute_sql "RESTORE FILELISTONLY FROM DISK = N'$BACKUP_FILE_SQL'")
 
 # Extract logical names (assuming standard BC backup structure)
 DATA_LOGICAL_NAME=$(echo "$FILELISTONLY" | grep -E "^\S+.*\.mdf" | awk '{print $1}')
@@ -82,7 +86,7 @@ echo "Log file: $LOG_LOGICAL_NAME"
 # Restore the database
 echo "Executing database restore..."
 RESTORE_CMD="RESTORE DATABASE [$DATABASE_NAME] 
-FROM DISK = N'$BACKUP_FILE' 
+FROM DISK = N'$BACKUP_FILE_SQL' 
 WITH MOVE N'$DATA_LOGICAL_NAME' TO N'/var/opt/mssql/data/${DATABASE_NAME}.mdf',
 MOVE N'$LOG_LOGICAL_NAME' TO N'/var/opt/mssql/data/${DATABASE_NAME}.ldf',
 REPLACE"
@@ -105,3 +109,13 @@ else
 fi
 
 echo "Database restoration completed successfully"
+
+# Import encryption key if available
+if [ -f "/home/encryption_key_data.txt" ] || [ -f "/home/import-encryption-key.sh" ]; then
+    echo "Importing BC encryption key..."
+    if [ -f "/home/import-encryption-key.sh" ]; then
+        /home/import-encryption-key.sh
+    else
+        echo "Warning: import-encryption-key.sh not found"
+    fi
+fi

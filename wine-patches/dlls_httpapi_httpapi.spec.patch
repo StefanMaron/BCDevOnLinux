@@ -1,0 +1,56 @@
+From: patch-export
+Date: Sun Aug  3 10:35:10 PM CEST 2025
+Subject: Changes to dlls/httpapi/httpapi.spec
+
+---
+diff --git a/dlls/httpapi/httpapi.spec b/dlls/httpapi/httpapi.spec
+index 7a5f2754163..524958325fb 100644
+--- a/dlls/httpapi/httpapi.spec
++++ b/dlls/httpapi/httpapi.spec
+@@ -1,24 +1,25 @@
+-@ stub HttpAddFragmentToCache
++@ stdcall HttpAddFragmentToCache(ptr wstr ptr long ptr ptr)
+ @ stdcall HttpAddUrl(ptr wstr ptr)
+ @ stdcall HttpAddUrlToUrlGroup(int64 wstr int64 long)
+-@ stub HttpCancelHttpRequest
++@ stdcall HttpCancelHttpRequest(ptr int64 ptr)
+ @ stdcall HttpCloseRequestQueue(ptr)
+ @ stdcall HttpCloseServerSession(int64)
+ @ stdcall HttpCloseUrlGroup(int64)
+-@ stub HttpControlService
++@ stdcall HttpControlService(long long ptr)
+ @ stdcall HttpCreateHttpHandle(ptr long)
+ @ stdcall HttpCreateRequestQueue(long wstr ptr long ptr)
+ @ stdcall HttpCreateServerSession(long ptr long)
+ @ stdcall HttpCreateUrlGroup(int64 ptr long)
+ @ stdcall HttpDeleteServiceConfiguration(ptr long ptr long ptr)
+-@ stub HttpFlushResponseCache
+-@ stub HttpGetCounters
++@ stdcall HttpFlushResponseCache(ptr wstr long ptr)
++@ stdcall HttpGetCounters(ptr long ptr long long)
+ @ stdcall HttpInitialize(long long ptr)
+-@ stub HttpQueryRequestQueueProperty
+-@ stub HttpQueryServerSessionProperty
++@ stdcall HttpIsFeatureSupported(long)
++@ stdcall HttpQueryRequestQueueProperty(ptr long ptr long long ptr ptr)
++@ stdcall HttpQueryServerSessionProperty(int64 long ptr long ptr)
+ @ stdcall HttpQueryServiceConfiguration(ptr long ptr long ptr long ptr ptr)
+-@ stub HttpQueryUrlGroupProperty
+-@ stub HttpReadFragmentFromCache
++@ stdcall HttpQueryUrlGroupProperty(int64 long ptr long ptr)
++@ stdcall HttpReadFragmentFromCache(ptr wstr ptr ptr ptr ptr)
+ @ stub HttpReceiveClientCertificate
+ @ stdcall HttpReceiveHttpRequest(ptr int64 long ptr long ptr ptr)
+ @ stdcall HttpReceiveRequestEntityBody(ptr int64 long ptr long ptr ptr)
+@@ -30,8 +31,8 @@
+ @ stdcall HttpSetServerSessionProperty(int64 long ptr long)
+ @ stdcall HttpSetServiceConfiguration(ptr long ptr long ptr)
+ @ stdcall HttpSetUrlGroupProperty(int64 long ptr long)
+-@ stub HttpShutdownRequestQueue
++@ stdcall HttpShutdownRequestQueue(ptr)
+ @ stdcall HttpTerminate(long ptr)
+ @ stub HttpWaitForDemandStart
+-@ stub HttpWaitForDisconnect
+-@ stub HttpWaitForDisconnectEx
++@ stdcall HttpWaitForDisconnect(ptr int64 ptr)
++@ stdcall HttpWaitForDisconnectEx(ptr int64 long ptr)

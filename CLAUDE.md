@@ -98,7 +98,13 @@ export SA_PASSWORD=YourSQLPassword
 # Force rebuild from scratch
 ./build-wine-custom.sh --no-cache
 
-# Stop all services
+# Start containers (without rebuild)
+./start
+
+# Stop and remove all containers
+./stop
+
+# Stop all services (alternative)
 docker compose -f compose-wine-custom.yml down
 ```
 

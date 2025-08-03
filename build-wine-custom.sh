@@ -25,11 +25,7 @@ if ! ls wine-patches/*.patch >/dev/null 2>&1; then
     exit 1
 fi
 
-# Check specifically for the critical locale fix patch
-if [ ! -f "wine-patches/001-wine-locale-display-fix.patch" ]; then
-    echo -e "${YELLOW}Warning: 001-wine-locale-display-fix.patch not found in wine-patches/${NC}"
-    echo "This patch is critical for Business Central locale support."
-fi
+# Wine patches are now integrated into the build
 
 # Show which patches will be applied
 echo -e "${GREEN}Wine patches that will be applied:${NC}"
@@ -64,7 +60,7 @@ while [[ $# -gt 0 ]]; do
             NO_SQL=true
             shift
             ;;
-        --help)
+        -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"

@@ -1,0 +1,52 @@
+From: patch-export
+Date: Sun Aug  3 10:35:10 PM CEST 2025
+Subject: Changes to include/wine/http.h
+
+---
+diff --git a/include/wine/http.h b/include/wine/http.h
+index 4a44392bdbf..c28d1742925 100644
+--- a/include/wine/http.h
++++ b/include/wine/http.h
+@@ -23,11 +23,13 @@
+ #include <http.h>
+ #include <winioctl.h>
+ 
+-#define IOCTL_HTTP_ADD_URL          CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_REMOVE_URL       CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_RECEIVE_REQUEST  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_SEND_RESPONSE    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, 0)
+-#define IOCTL_HTTP_RECEIVE_BODY     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_ADD_URL              CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_REMOVE_URL           CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_RECEIVE_REQUEST      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_SEND_RESPONSE        CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_RECEIVE_BODY         CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_WAIT_FOR_DISCONNECT  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80e, METHOD_BUFFERED, 0)
++#define IOCTL_HTTP_CANCEL_REQUEST       CTL_CODE(FILE_DEVICE_UNKNOWN, 0x80f, METHOD_BUFFERED, 0)
+ 
+ struct http_add_url_params
+ {
+@@ -46,6 +48,8 @@ struct http_receive_request_params
+ struct http_response
+ {
+     HTTP_REQUEST_ID id;
++    BOOL is_body;
++    BOOL more_data;
+     ULONG response_flags;
+     int len;
+     char buffer[1];
+@@ -57,4 +61,14 @@ struct http_receive_body_params
+     ULONG bits;
+ };
+ 
++struct http_cancel_request_params
++{
++    HTTP_REQUEST_ID id;
++};
++
++struct http_wait_for_disconnect_params
++{
++    HTTP_CONNECTION_ID id;
++};
++
+ #endif
