@@ -9,10 +9,10 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Detect which compose file to use
-if [ -f "compose-wine-custom.yml" ]; then
-    COMPOSE_FILE="compose-wine-custom.yml"
-elif [ -f "compose.yml" ]; then
+if [ -f "compose.yml" ]; then
     COMPOSE_FILE="compose.yml"
+elif [ -f "compose-no-sql.yml" ]; then
+    COMPOSE_FILE="compose-no-sql.yml"
 else
     echo -e "${RED}Error: No compose file found!${NC}"
     exit 1

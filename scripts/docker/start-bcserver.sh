@@ -47,15 +47,15 @@ else
 fi
 
 # Source the .NET component check function
-if [ -f "/home/check-wine-dotnet.sh" ]; then
-    source /home/check-wine-dotnet.sh
+if [ -f "/home/tests/check-wine-dotnet.sh" ]; then
+    source /home/tests/check-wine-dotnet.sh
 fi
 
 # Check if Wine prefix exists and has all required components
 if [ ! -d "$WINEPREFIX" ] || [ ! -f "$WINEPREFIX/system.reg" ]; then
     echo "Wine prefix not found or corrupted, initializing..."
     echo "STATUS: Initializing Wine prefix..." >> "$STATUS_FILE"
-    /home/init-wine.sh
+    /home/scripts/wine/init-wine.sh
     echo "STATUS: Wine prefix initialization completed" >> "$STATUS_FILE"
 else
     echo "Wine prefix found at: $WINEPREFIX"
@@ -71,11 +71,11 @@ else
             echo "STATUS: Installing .NET Framework 4.8..." >> "$STATUS_FILE"
             
             # Run the install script
-            if [ -f "/home/install-dotnet-components.sh" ]; then
-                /home/install-dotnet-components.sh
+            if [ -f "/home/scripts/utils/install-dotnet-components.sh" ]; then
+                /home/scripts/utils/install-dotnet-components.sh
             else
                 echo "WARNING: install-dotnet-components.sh not found, running init-wine.sh instead"
-                /home/init-wine.sh
+                /home/scripts/wine/init-wine.sh
             fi
             
             echo "STATUS: .NET installation completed, verifying..." >> "$STATUS_FILE"

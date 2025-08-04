@@ -18,7 +18,7 @@ This is a Docker-based deployment solution for running Microsoft Dynamics 365 Bu
 
 ## Custom Wine Build Solution
 
-The project uses a custom Wine build to fix the locale/culture issues that prevent Business Central from running on standard Wine. The `./build-wine-custom.sh` script is the main entry point that:
+The project uses a custom Wine build to fix the locale/culture issues that prevent Business Central from running on standard Wine. The `./build.sh` script is the main entry point that:
 
 - Builds Wine from source with a patch that fixes the `LocaleNameToLCID` function
 - Uses a multi-stage Docker build to compile Wine with all necessary dependencies
@@ -29,19 +29,19 @@ The project uses a custom Wine build to fix the locale/culture issues that preve
 
 ```bash
 # Standard build and run
-./build-wine-custom.sh
+./build.sh
 
 # Build only (don't start containers)
-./build-wine-custom.sh --build-only
+./build.sh --build-only
 
 # Force rebuild without cache
-./build-wine-custom.sh --no-cache
+./build.sh --no-cache
 
 # Use external SQL server (no SQL container)
-./build-wine-custom.sh --no-sql
+./build.sh --no-sql
 
 # Show help
-./build-wine-custom.sh --help
+./build.sh --help
 ```
 
 ### What the Custom Build Fixes
@@ -59,14 +59,14 @@ See [execution-flow.md](execution-flow.md) for a detailed flowchart and explanat
 git clone <repository-url>
 cd BCDevOnLinux
 
-# Build and start containers with custom Wine (includes locale fix)
-./build-wine-custom.sh
+# Build and start containers (includes Wine locale fix)
+./build.sh
 
 # Check container status (both should show "healthy")
 docker ps --format "table {{.Names}}\t{{.Status}}"
 
 # View logs if needed
-docker compose -f compose-wine-custom.yml logs -f bc
+docker compose -f compose.yml logs -f bc
 ```
 
 ### Using External SQL Server
@@ -80,7 +80,7 @@ export SQL_SERVER_PORT=1433  # Optional, defaults to 1433
 export SA_PASSWORD=YourSQLPassword
 
 # Build and run without SQL container
-./build-wine-custom.sh --no-sql
+./build.sh --no-sql
 
 # The BC container will connect to your external SQL instance
 ```
@@ -89,23 +89,23 @@ export SA_PASSWORD=YourSQLPassword
 
 ### Building and Running
 ```bash
-# Build and run with custom Wine (recommended)
-./build-wine-custom.sh
+# Build and run (recommended)
+./build.sh
 
 # Build only without starting
-./build-wine-custom.sh --build-only
+./build.sh --build-only
 
 # Force rebuild from scratch
-./build-wine-custom.sh --no-cache
+./build.sh --no-cache
 
 # Start containers (without rebuild)
-./start
+./scripts/utils/start
 
 # Stop and remove all containers
-./stop
+./scripts/utils/stop
 
 # Stop all services (alternative)
-docker compose -f compose-wine-custom.yml down
+docker compose -f compose.yml down
 ```
 
 ### Container Management - Quick Access Scripts
@@ -115,27 +115,27 @@ The project includes convenient wrapper scripts for common container operations:
 #### Container Access
 ```bash
 # BC Container
-./bc                    # Interactive bash shell
-./bc wine --version     # Check Wine version
-./bc ps aux             # List processes
-./bc -i pwsh           # Interactive PowerShell
+./scripts/utils/bc                    # Interactive bash shell
+./scripts/utils/bc wine --version     # Check Wine version
+./scripts/utils/bc ps aux             # List processes
+./scripts/utils/bc -i pwsh           # Interactive PowerShell
 
 # SQL Container  
-./sql                   # Interactive bash shell
-./sql -i sqlcmd        # Interactive SQL command line
-./sql sqlcmd -Q "SELECT name FROM sys.databases"  # Run SQL query
+./scripts/utils/sql                   # Interactive bash shell
+./scripts/utils/sql -i sqlcmd        # Interactive SQL command line
+./scripts/utils/sql sqlcmd -Q "SELECT name FROM sys.databases"  # Run SQL query
 ```
 
 #### Logs and Status
 ```bash
 # View logs
-./logs                  # Follow logs from both containers
-./logs bc              # Follow only BC logs
-./logs -n sql          # Show SQL logs without following
-./logs -t 50 bc        # Show last 50 lines of BC logs
+./scripts/utils/logs                  # Follow logs from both containers
+./scripts/utils/logs bc              # Follow only BC logs
+./scripts/utils/logs -n sql          # Show SQL logs without following
+./scripts/utils/logs -t 50 bc        # Show last 50 lines of BC logs
 
 # Check status
-./status               # Show container health and service status
+./scripts/utils/status               # Show container health and service status
 ```
 
 #### BC Service Debugging Scripts
@@ -145,19 +145,19 @@ The project includes comprehensive debugging tools for troubleshooting BC startu
 ##### Wine Debug Launcher (`debug-bc-wine.sh`)
 ```bash
 # Debug file access patterns
-./debug-bc-wine.sh -c file -f CustomSettings
+./scripts/debug/debug-bc-wine.sh -c file -f CustomSettings
 
 # Debug SQL connection issues  
-./debug-bc-wine.sh --sql -t 60
+./scripts/debug/debug-bc-wine.sh --sql -t 60
 
 # Debug configuration loading
-./debug-bc-wine.sh --config -F
+./scripts/debug/debug-bc-wine.sh --config -F
 
 # Debug with multiple channels and filter
-./debug-bc-wine.sh -c file,reg,odbc -f "config\|key\|sql" -F
+./scripts/debug/debug-bc-wine.sh -c file,reg,odbc -f "config\|key\|sql" -F
 
 # Full debug with no timeout
-./debug-bc-wine.sh --full -t 0 -v
+./scripts/debug/debug-bc-wine.sh --full -t 0 -v
 
 # Predefined channel sets:
 #   --config    Config file debugging (file,reg,module)
@@ -170,13 +170,13 @@ The project includes comprehensive debugging tools for troubleshooting BC startu
 ##### Log Analysis Tool (`analyze-bc-wine-log.sh`)
 ```bash
 # Analyze most recent log with summary
-./analyze-bc-wine-log.sh -s
+./tests/analyze-bc-wine-log.sh -s
 
 # Analyze specific log for config issues
-./analyze-bc-wine-log.sh /home/bc-debug-logs/bc-wine-debug_20240125_123456.log -c
+./tests/analyze-bc-wine-log.sh /home/bc-debug-logs/bc-wine-debug_20240125_123456.log -c
 
 # Search for specific pattern
-./analyze-bc-wine-log.sh -p "CustomSettings"
+./tests/analyze-bc-wine-log.sh -p "CustomSettings"
 
 # Analysis options:
 #   -s, --summary     Show summary statistics
@@ -191,7 +191,7 @@ The project includes comprehensive debugging tools for troubleshooting BC startu
 ##### Quick Test Script (`bc-wine-quicktest.sh`)
 ```bash
 # Run quick diagnostic tests
-./bc-wine-quicktest.sh
+./tests/bc-wine-quicktest.sh
 
 # Tests:
 # 1. Configuration file access patterns
@@ -214,8 +214,8 @@ docker exec bcdevonlinux-bc-1 pwsh /home/test-sql-connection.ps1
 #### Traditional Docker Commands (still available)
 ```bash
 # Access containers directly
-docker compose -f compose-wine-custom.yml exec bc /bin/bash
-docker compose -f compose-wine-custom.yml exec sql /bin/bash
+docker compose -f compose.yml exec bc /bin/bash
+docker compose -f compose.yml exec sql /bin/bash
 
 # Check container health
 docker ps --format "table {{.Names}}\t{{.Status}}"
@@ -241,7 +241,7 @@ ps aux | grep wine
 - Both containers connected via `bc_network` bridge network
 
 ### Custom Wine Build Process
-The project uses a multi-stage Docker build (`dockerfile-wine-custom`):
+The project uses a multi-stage Docker build (`dockerfile`):
 1. **Builder Stage**: Compiles Wine from source with:
    - Wine Staging patches for enhanced compatibility
    - Custom locale fix patch (`wine-locale-display-fix.patch`)
@@ -254,7 +254,7 @@ The project uses a multi-stage Docker build (`dockerfile-wine-custom`):
    - PowerShell and BC Container Helper
 
 ### Important Scripts
-- `build-wine-custom.sh`: **Main entry point** - Builds custom Wine and starts containers
+- `build.sh`: **Main entry point** - Builds custom Wine and starts containers
 - `entrypoint.sh`: Main container startup orchestration
 - `init-wine.sh`: Wine environment initialization
 - `start-bcserver.sh`: Unified BC Server launch script with all improvements
@@ -277,12 +277,11 @@ The project uses a multi-stage Docker build (`dockerfile-wine-custom`):
   - See `/legacy/culture-workarounds/README.md` for historical context
 
 ### Configuration Files
-- `CustomSettings.config`: BC Server configuration (database connection, service endpoints)
-- `compose-wine-custom.yml`: Docker Compose service definitions for custom Wine build
-- `dockerfile-wine-custom`: Multi-stage build that compiles Wine from source with locale fixes
-- `wine-locale-display-fix.patch`: The patch that fixes Wine's locale handling
-- `compose.yml`: Standard Docker Compose (deprecated - use custom Wine build)
-- `Dockerfile`: Standard Dockerfile (deprecated - use custom Wine build)
+- `config/CustomSettings.config`: BC Server configuration (database connection, service endpoints)
+- `compose.yml`: Docker Compose service definitions for Wine build
+- `compose-no-sql.yml`: Docker Compose for external SQL server usage
+- `dockerfile`: Multi-stage build that compiles Wine from source with locale fixes
+- `wine-patches/`: Directory containing Wine patches including locale fixes
 - Environment variables:
   - `SA_PASSWORD`: SQL Server SA password (default: `P@ssw0rd123!`)
   - `BC_DATABASE_SERVER`: SQL Server hostname (default: `sql`)
@@ -370,7 +369,7 @@ docker exec bcdevonlinux-bc-1 wine reg query "HKEY_CURRENT_USER\Control Panel\In
 - **Root Cause**: Wine's `LocaleNameToLCID("en-US")` returns 0 instead of 0x0409
 - **Detailed Analysis**: Wine's `find_lcname_entry()` function fails to find "en-US" in its binary search of the locale table, despite the locale being present in locale.nls
 - **Solution**: **NOW FIXED** - The custom Wine build includes a patch that adds fallback handling in `get_locale_by_name()` function
-- **Implementation**: Use `./build-wine-custom.sh` to build and run the containers with the patched Wine
+- **Implementation**: Use `./build.sh` to build and run the containers with the patched Wine
 - **Previous workarounds (now obsolete)**:
   - Setting `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` prevents the error but disables all culture support, breaking BC's language validation
   - Using LCID (1033) instead of culture name ("en-US") in config doesn't help

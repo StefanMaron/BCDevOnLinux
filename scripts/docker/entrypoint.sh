@@ -5,8 +5,8 @@ set -e
 echo "Starting Business Central Container using BC4Ubuntu approach..."
 
 # Source Wine environment
-if [ -f /home/wine-env.sh ]; then
-    source /home/wine-env.sh
+if [ -f /home/scripts/wine/wine-env.sh ]; then
+    source /home/scripts/wine/wine-env.sh
 fi
 
 # Set default environment variables if not provided
@@ -18,13 +18,13 @@ echo "Using provided CustomSettings.config (template generation skipped)"
 # Setup BC encryption keys using bash script
 # if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
 #     echo "Setting up BC encryption..."
-#     /home/setup-bc-encryption.sh
+#     /home/scripts/bc/setup-bc-encryption.sh
 # fi
 
 # Check if this is first run and initialize Wine if needed
 if [ ! -f "/home/.wine-initialized" ]; then
     echo "First run detected, initializing Wine environment..."
-    /home/init-wine.sh
+    /home/scripts/wine/init-wine.sh
     touch /home/.wine-initialized
     echo "Wine initialization completed"
 fi
@@ -33,7 +33,7 @@ fi
 export PATH="$PATH:/opt/mssql-tools18/bin"
 if command -v sqlcmd >/dev/null 2>&1; then
     echo "Checking database..."
-    /home/restore-database.sh
+    /home/scripts/bc/restore-database.sh
 else
     echo "sqlcmd not found, skipping database restore"
     echo "Database must be restored manually"
@@ -51,7 +51,7 @@ fi
 if [ "${BC_AUTOSTART}" = "false" ]; then
     echo "BC_AUTOSTART is set to false. Container will stay running without starting BC Server."
     echo "To start BC Server manually, run:"
-    echo "  /home/start-bcserver.sh"
+    echo "  /home/scripts/docker/start-bcserver.sh"
     echo ""
     echo "Container is ready for debugging..."
     # Keep container running
@@ -61,5 +61,5 @@ else
     echo "Starting BC Server..."
     # Note: The custom Wine build includes locale fixes, eliminating the need for
     # the previous workaround scripts (now archived in legacy/culture-workarounds/)
-    exec /home/start-bcserver.sh
+    exec /home/scripts/docker/start-bcserver.sh
 fi

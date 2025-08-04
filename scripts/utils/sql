@@ -3,10 +3,12 @@
 # Wrapper script for executing commands in the SQL container
 
 # Detect which compose file to use
-if [ -f "compose-wine-custom.yml" ]; then
-    COMPOSE_FILE="compose-wine-custom.yml"
-elif [ -f "compose.yml" ]; then
+if [ -f "compose.yml" ]; then
     COMPOSE_FILE="compose.yml"
+elif [ -f "compose-no-sql.yml" ]; then
+    echo "Warning: Using compose-no-sql.yml but trying to access SQL container"
+    echo "SQL container may not be available"
+    COMPOSE_FILE="compose-no-sql.yml"
 else
     echo "Error: No compose file found!"
     exit 1
