@@ -1,252 +1,22 @@
-# Multi-stage build for Business Central on Linux with custom Wine build
-FROM ubuntu:22.04 AS wine-builder
+# Business Central on Linux using optimized base image
+# Dramatically reduced from ~290 lines to ~60 lines using stefanmaronbc/bc-wine-base
+FROM stefanmaronbc/bc-wine-base:latest
 
-# Install Wine build dependencies
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        # Build essentials
-        build-essential \
-        gcc-multilib \
-        g++-multilib \
-        flex \
-        bison \
-        # Source control
-        git \
-        wget \
-        ca-certificates \
-        # Wine build requirements
-        autoconf \
-        automake \
-        libtool \
-        pkg-config \
-        make \
-        perl \
-        # Required perl modules for make_unicode
-        libxml-libxml-perl \
-        libdigest-sha-perl \
-        # MinGW for Windows compatibility
-        mingw-w64 \
-        # Build acceleration
-        ccache \
-        # Python for Wine Staging
-        python3 \
-        python3-pip \
-        # X11 development libraries
-        libx11-dev \
-        libx11-dev:i386 \
-        libfreetype6-dev \
-        libfreetype6-dev:i386 \
-        libxcursor-dev \
-        libxcursor-dev:i386 \
-        libxi-dev \
-        libxi-dev:i386 \
-        libxext-dev \
-        libxext-dev:i386 \
-        libxrandr-dev \
-        libxrandr-dev:i386 \
-        libxrender-dev \
-        libxrender-dev:i386 \
-        libxinerama-dev \
-        libxinerama-dev:i386 \
-        libgl1-mesa-dev \
-        libgl1-mesa-dev:i386 \
-        libglu1-mesa-dev \
-        libglu1-mesa-dev:i386 \
-        # Additional libraries for better compatibility
-        libasound2-dev \
-        libasound2-dev:i386 \
-        libpulse-dev \
-        libpulse-dev:i386 \
-        libdbus-1-dev \
-        libdbus-1-dev:i386 \
-        libfontconfig1-dev \
-        libfontconfig1-dev:i386 \
-        libgnutls28-dev \
-        libgnutls28-dev:i386 \
-        libncurses-dev \
-        libncurses-dev:i386 \
-        libldap2-dev \
-        libldap2-dev:i386 \
-        libcups2-dev \
-        libcups2-dev:i386 \
-        # Development tools
-        gettext \
-        libxml2-dev \
-        libxslt1-dev \
-        libssl-dev \
-        unzip \
-    && rm -rf /var/lib/apt/lists/*
+# Set BC-specific environment variables
+ARG BC_VERSION=26
+ARG BC_COUNTRY=w1
+ARG BC_TYPE=Sandbox
 
-# Set up ccache
-ENV PATH="/usr/lib/ccache:${PATH}"
-ENV CCACHE_DIR=/ccache
-RUN mkdir -p /ccache && \
-    ccache --max-size=2G
-
-# Clone latest Wine source
-RUN git clone --depth 1 https://gitlab.winehq.org/wine/wine.git /wine-src
-
-# Clone and apply Wine Staging patches
-RUN git clone --depth 1 https://github.com/wine-staging/wine-staging.git /wine-staging && \
-    cd /wine-staging && \
-    python3 ./staging/patchinstall.py DESTDIR=/wine-src --all
-
-# Copy patch application script and patches directory
-COPY scripts/wine/apply-wine-patches.sh /apply-wine-patches.sh
-COPY wine-patches /wine-patches
-RUN chmod +x /apply-wine-patches.sh
-
-# Apply all custom Wine patches from the patches directory
-RUN /apply-wine-patches.sh /wine-src /wine-patches
-
-# Regenerate locale data after patches
-RUN cd /wine-src/tools && \
-    perl make_unicode && \
-    cd ..
-
-# Create build directories
-RUN mkdir -p /wine-build/wine64 /wine-build/wine32
-
-# Configure and build 64-bit Wine
-RUN cd /wine-build/wine64 && \
-    CC="ccache gcc" CROSSCC="ccache x86_64-w64-mingw32-gcc" \
-    /wine-src/configure \
-        --enable-win64 \
-        --prefix=/opt/wine-custom \
-        --disable-tests \
-    && make -j$(nproc)
-
-# Configure and build 32-bit Wine with 64-bit support
-RUN cd /wine-build/wine32 && \
-    CC="ccache gcc -m32" CROSSCC="ccache i686-w64-mingw32-gcc" \
-    PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig \
-    /wine-src/configure \
-        --with-wine64=/wine-build/wine64 \
-        --prefix=/opt/wine-custom \
-        --disable-tests \
-    && make -j$(nproc)
-
-# Install Wine (64-bit first, then 32-bit)
-RUN cd /wine-build/wine64 && make install && \
-    cd /wine-build/wine32 && make install
-
-# Create version file
-RUN /opt/wine-custom/bin/wine --version > /opt/wine-custom/wine-version.txt
-
-# Final stage - BC Server with custom Wine
-FROM ubuntu:22.04
-
-# Essential environment variables
+# Essential environment variables (inherits optimized Wine environment from base image)
 ENV DEBIAN_FRONTEND=noninteractive \
-    DISPLAY=":0" \
-    PATH="/opt/wine-custom/bin:${PATH}" \
-    LD_LIBRARY_PATH="/opt/wine-custom/lib64:/opt/wine-custom/lib:${LD_LIBRARY_PATH}" \
-    WINEARCH=win64 \
-    WINEPREFIX=/root/.wine
+    BCPORT=7046 \
+    BCMANAGEMENTPORT=7045
 
-# Copy custom Wine build from builder stage
-COPY --from=wine-builder /opt/wine-custom /opt/wine-custom
-COPY --from=wine-builder /opt/wine-custom/wine-version.txt /opt/wine-custom/wine-version.txt
-
-# Install runtime dependencies
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        # Wine runtime dependencies
-        libc6:i386 \
-        libx11-6:i386 \
-        libx11-6 \
-        libfreetype6:i386 \
-        libfreetype6 \
-        libfontconfig1:i386 \
-        libfontconfig1 \
-        libxcursor1:i386 \
-        libxcursor1 \
-        libxi6:i386 \
-        libxi6 \
-        libxext6:i386 \
-        libxext6 \
-        libxrandr2:i386 \
-        libxrandr2 \
-        libxrender1:i386 \
-        libxrender1 \
-        libxinerama1:i386 \
-        libxinerama1 \
-        libgl1:i386 \
-        libgl1 \
-        libglu1-mesa:i386 \
-        libglu1-mesa \
-        libasound2:i386 \
-        libasound2 \
-        libpulse0:i386 \
-        libpulse0 \
-        libdbus-1-3:i386 \
-        libdbus-1-3 \
-        libgnutls30:i386 \
-        libgnutls30 \
-        libncurses6:i386 \
-        libncurses6 \
-        libldap-2.5-0:i386 \
-        libldap-2.5-0 \
-        libcups2:i386 \
-        libcups2 \
-        # Required tools
-        winbind \
-        p7zip-full \
-        net-tools \
-        cabextract \
-        wget \
-        curl \
-        gnupg2 \
-        software-properties-common \
-        ca-certificates \
-        xvfb \
-        xauth \
-        unzip \
-        locales \
-        # Additional tools
-        lsb-release \
-        vim-common \
-        # SQL Server tools dependencies
-        apt-transport-https \
-        # Network debugging tools
-        iputils-ping \
-        dnsutils \
-        telnet \
-    && locale-gen en_US.UTF-8 \
-    && update-locale LANG=en_US.UTF-8 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install winetricks
-RUN wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O /usr/bin/winetricks && \
-    chmod +x /usr/bin/winetricks
-
-# Install Microsoft repository and packages (PowerShell and SQL tools)
-RUN wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" && \
-    dpkg -i packages-microsoft-prod.deb && \
-    rm packages-microsoft-prod.deb && \
-    apt-get update && \
-    apt-get install -y powershell && \
-    ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev && \
-    echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> /etc/bash.bashrc && \
-    rm -rf /var/lib/apt/lists/*
-
-# Show Wine version
-RUN echo "Wine version installed:" && cat /opt/wine-custom/wine-version.txt
-
-# Create necessary directories  
-RUN mkdir -p /home/bcartifacts /home/bcserver/Keys
-
-# Set shell to PowerShell for BC Container Helper installation
+# Set shell to PowerShell for BC operations (PowerShell already installed in base)
 SHELL ["pwsh", "-Command"]
 
-# Install BC Container Helper
-RUN Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; \
-    Install-Module -Name BcContainerHelper -Force -AllowClobber -Scope AllUsers
-
-# Download BC artifacts (version 26 as per your current setup)
-RUN $artifactUrl = Get-BCartifactUrl -version 26 -country w1 -type Sandbox; \
+# Download BC artifacts (BC Container Helper already installed in base)
+RUN $artifactUrl = Get-BCartifactUrl -version $env:BC_VERSION -country $env:BC_COUNTRY -type $env:BC_TYPE; \
     $artifactPaths = Download-Artifacts $artifactUrl -includePlatform; \
     Write-Host "Artifact paths received:"; \
     $artifactPaths | ForEach-Object { Write-Host "  $_" }; \
@@ -261,27 +31,47 @@ RUN $artifactUrl = Get-BCartifactUrl -version 26 -country w1 -type Sandbox; \
     Write-Host "Final artifact structure:"; \
     Get-ChildItem "/home/bcartifacts" -Recurse -Depth 1 | Select-Object FullName | ForEach-Object { Write-Host "  $($_.FullName)" }
 
-# Switch back to bash
+# Switch back to bash for remaining operations
 SHELL ["/bin/bash", "-c"]
+
+# Install BC version-specific .NET components (only what's not in base image)
+# Base image includes: Wine, .NET Framework 4.8, PowerShell, BC Container Helper, SQL tools
+RUN cd /tmp && \
+    # Install .NET 8 Desktop Runtime (version-specific for BC v26)
+    echo "Installing .NET 8.0.18 Desktop Runtime..." && \
+    wget -q "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.18/windowsdesktop-runtime-8.0.18-win-x64.exe" && \
+    # Start Xvfb for .NET installation
+    rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true && \
+    Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX & \
+    XVFB_PID=$! && \
+    sleep 3 && \
+    wine windowsdesktop-runtime-8.0.18-win-x64.exe /quiet /install /norestart && \
+    rm -f windowsdesktop-runtime-8.0.18-win-x64.exe && \
+    echo ".NET 8 Desktop Runtime installed" && \
+    # Install ASP.NET Core 8.0 hosting bundle (version-specific for BC v26)
+    echo "Installing ASP.NET Core 8.0.18 hosting bundle..." && \
+    wget -q "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/8.0.18/dotnet-hosting-8.0.18-win.exe" && \
+    wine dotnet-hosting-8.0.18-win.exe /quiet /install /norestart && \
+    rm -f dotnet-hosting-8.0.18-win.exe && \
+    echo "ASP.NET Core 8 hosting bundle installed" && \
+    # Stop virtual display and clean up
+    kill $XVFB_PID 2>/dev/null || true && \
+    rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
 
 # Copy scripts and configuration files
 COPY scripts/ /home/scripts/
 COPY config/CustomSettings.config /home/
-# Also copy to bcserver directory to ensure it's used
+RUN mkdir -p /home/config
+COPY config/secret.key /home/config/
 RUN mkdir -p /home/bcserver && cp /home/CustomSettings.config /home/bcserver/
 RUN find /home/scripts -name "*.sh" -exec chmod +x {} \;
 
-# Set up Wine environment for all shell sessions
+# Set up Wine environment for all shell sessions (base image provides optimized Wine environment)
 RUN echo "" >> /root/.bashrc && \
     echo "# Wine environment for BC Server" >> /root/.bashrc && \
     echo "if [ -f /home/scripts/wine/wine-env.sh ]; then" >> /root/.bashrc && \
     echo "    source /home/scripts/wine/wine-env.sh >/dev/null 2>&1" >> /root/.bashrc && \
     echo "fi" >> /root/.bashrc
-
-# Initialize Wine prefix
-RUN wineboot --init && \
-    # Wait for wineserver to finish
-    wineserver --wait
 
 # Expose BC ports
 EXPOSE 7046 7047 7048 7049

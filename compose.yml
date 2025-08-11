@@ -23,7 +23,7 @@ services:
       - bc_data:/home/bcserver
       - bc_artifacts:/home/bcartifacts
       - wine_data:/root/.wine
-      - wine_cache:/ccache  # Cache compiler output for faster rebuilds
+      # wine_cache removed - not needed with base image
       - ./secret.key:/home/secret.key:ro  # Mount RSA key directly
     networks:
       - bc-network
@@ -33,7 +33,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 300s  # Give more time for Wine initialization
+      start_period: 180s  # Reduced from 300s due to base image optimizations
 
   sql:
     image: "mcr.microsoft.com/mssql/server:2022-latest"
@@ -64,8 +64,6 @@ volumes:
   bc_artifacts:
     driver: local
   wine_data:
-    driver: local
-  wine_cache:
     driver: local
 
 networks:

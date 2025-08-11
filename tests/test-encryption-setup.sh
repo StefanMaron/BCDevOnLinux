@@ -13,7 +13,7 @@ mkdir -p "$TEST_DIR"
 
 echo ""
 echo "1. Testing encryption key generation..."
-./setup-bc-encryption.sh --keys-dir "$TEST_DIR/keys" --no-verify-sql
+./scripts/bc/setup-bc-encryption.sh --keys-dir "$TEST_DIR/keys" --no-verify-sql
 
 echo ""
 echo "2. Verifying generated files..."
@@ -48,9 +48,9 @@ fi
 echo ""
 echo "5. Testing backup functionality..."
 # First create a key
-./setup-bc-encryption.sh --keys-dir "$TEST_DIR/keys" --key-name "test.key" --no-verify-sql >/dev/null 2>&1
+./scripts/bc/setup-bc-encryption.sh --keys-dir "$TEST_DIR/keys" --key-name "test.key" --no-verify-sql >/dev/null 2>&1
 # Now run again to trigger backup
-./setup-bc-encryption.sh --keys-dir "$TEST_DIR/keys" --key-name "test.key" --no-verify-sql >/dev/null 2>&1
+./scripts/bc/setup-bc-encryption.sh --keys-dir "$TEST_DIR/keys" --key-name "test.key" --no-verify-sql >/dev/null 2>&1
 if ls "$TEST_DIR/keys/test.key.backup."* >/dev/null 2>&1; then
     echo "✓ Backup created successfully"
     BACKUP_COUNT=$(ls "$TEST_DIR/keys/test.key.backup."* 2>/dev/null | wc -l)
@@ -98,7 +98,7 @@ echo "=========================="
 echo "All tests completed!"
 echo ""
 echo "To test in a real environment with SQL verification:"
-echo "  ./setup-bc-encryption.sh"
+echo "  ./scripts/bc/setup-bc-encryption.sh"
 echo ""
 echo "To verify an existing setup:"
 echo "  pwsh /home/bcserver/Keys/verify-encryption.ps1"

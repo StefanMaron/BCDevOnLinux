@@ -5,7 +5,11 @@ set -e
 
 # Configuration
 SQL_SERVER="${SQL_SERVER:-sql}"
-DATABASE_NAME="${DATABASE_NAME:-BC}"
+# Try to get database name from CustomSettings.config if not set
+if [ -z "$DATABASE_NAME" ] && [ -f "/home/CustomSettings.config" ]; then
+    DATABASE_NAME=$(grep -oP '(?<=DatabaseName" value=")[^"]+' /home/CustomSettings.config 2>/dev/null || echo "")
+fi
+DATABASE_NAME="${DATABASE_NAME:-CRONUS}"
 SA_PASSWORD="${SA_PASSWORD:-P@ssw0rd123!}"
 
 echo "Importing encryption key into $DATABASE_NAME database..."

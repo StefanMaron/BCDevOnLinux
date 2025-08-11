@@ -2,8 +2,8 @@
 # Debug BC configuration file
 
 # Source Wine environment
-if [ -f /home/wine-env.sh ]; then
-    source /home/wine-env.sh >/dev/null 2>&1
+if [ -f /home/scripts/wine/wine-env.sh ]; then
+    source /home/scripts/wine/wine-env.sh >/dev/null 2>&1
 fi
 
 echo "=== BC Configuration Debug ==="
@@ -51,7 +51,7 @@ ls -la "$WINE_CONFIG" 2>/dev/null
 
 echo ""
 echo "5. Check if start-bcserver.sh copied the config:"
-if [ -f "/home/start-bcserver.sh" ]; then
+if [ -f "/home/scripts/docker/start-bcserver.sh" ]; then
     echo "   Looking for copy commands in start-bcserver.sh:"
-    grep -n "CustomSettings.config" /home/start-bcserver.sh | grep -E "(cp|copy)"
+    grep -n "CustomSettings.config" /home/scripts/docker/start-bcserver.sh | grep -E "(cp|copy)"
 fi

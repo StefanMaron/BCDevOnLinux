@@ -110,12 +110,10 @@ fi
 
 echo "Database restoration completed successfully"
 
-# Import encryption key if available
-if [ -f "/home/encryption_key_data.txt" ] || [ -f "/home/import-encryption-key.sh" ]; then
-    echo "Importing BC encryption key..."
-    if [ -f "/home/import-encryption-key.sh" ]; then
-        /home/import-encryption-key.sh
-    else
-        echo "Warning: import-encryption-key.sh not found"
-    fi
+# Import predefined encryption key
+echo "Importing BC predefined encryption key..."
+if [ -f "/home/scripts/bc/import-encryption-key.sh" ]; then
+    /home/scripts/bc/import-encryption-key.sh
+else
+    echo "Warning: import-encryption-key.sh not found"
 fi

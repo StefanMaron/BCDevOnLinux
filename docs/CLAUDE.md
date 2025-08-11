@@ -205,7 +205,7 @@ The project includes comprehensive debugging tools for troubleshooting BC startu
 docker exec bcdevonlinux-bc-1 /opt/mssql-tools18/bin/sqlcmd -S sql -U sa -P P@ssw0rd123! -Q "SELECT 1" -C
 
 # Test PowerShell SQL connection
-docker exec bcdevonlinux-bc-1 pwsh /home/test-sql-connection.ps1
+docker exec bcdevonlinux-bc-1 pwsh /home/tests/test-sql-connection.ps1
 
 # Check active SQL sessions
 ./sql sqlcmd -Q "SELECT session_id, login_name, host_name, program_name FROM sys.dm_exec_sessions WHERE is_user_process = 1"
@@ -318,7 +318,7 @@ BC_AUTOSTART=false
 # Container will stay running without starting BC Server
 # Start BC manually inside container:
 docker exec -it bcdevonlinux-bc-1 /bin/bash
-/home/start-bcserver.sh
+/home/scripts/docker/start-bcserver.sh
 ```
 
 #### Wine Locale Debugging

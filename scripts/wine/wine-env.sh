@@ -18,7 +18,7 @@ fi
 # Helpful aliases
 alias cdbc='cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service"'
 alias bclog='tail -f /home/bc-init-status.txt 2>/dev/null || echo "No initialization log found"'
-alias bcstatus='/home/check-bc-status.sh'
+alias bcstatus='/home/tests/check-bc-status.sh'
 
 # Only show output if running interactively
 if [ -t 1 ]; then

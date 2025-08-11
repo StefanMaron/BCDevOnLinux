@@ -53,6 +53,9 @@ if [ "${BC_AUTOSTART}" = "false" ]; then
     echo "To start BC Server manually, run:"
     echo "  /home/scripts/docker/start-bcserver.sh"
     echo ""
+    echo "To create a BC user, run:"
+    echo "  /home/scripts/bc/create-bc-user.sh [username] [password] [permission_set]"
+    echo ""
     echo "Container is ready for debugging..."
     # Keep container running
     tail -f /dev/null

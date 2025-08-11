@@ -167,13 +167,13 @@ if [ -f "/home/bcserver/Keys/bc.key" ]; then
     cp "/home/bcserver/Keys/bc.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
     
     echo "Encryption keys copied to all required locations"
-elif [ -f "/home/secret.key" ]; then
-    echo "Using RSA key from /home/secret.key (fallback location)"
+elif [ -f "/home/config/secret.key" ]; then
+    echo "Using RSA key from /home/config/secret.key (fallback location)"
     # Copy to all required locations in Wine prefix
-    cp "/home/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BusinessCentral260.key"
-    cp "/home/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BC.key"
-    cp "/home/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
-    cp "/home/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/bc.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BusinessCentral260.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BC.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/bc.key"
     
     echo "RSA encryption keys copied to all required locations"
 else
@@ -181,7 +181,7 @@ else
     echo "Expected locations (in priority order):"
     echo "  1. /home/bcserver/secret.key (RSA key)"
     echo "  2. /home/bcserver/Keys/bc.key"
-    echo "  3. /home/secret.key (fallback)"
+    echo "  3. /home/config/secret.key (fallback)"
 fi
 
 # Verify Wine environment
@@ -206,5 +206,39 @@ echo ""
 # Execute BC Server
 # The custom Wine build handles all locale/culture issues internally
 echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
+
+# Start BC Server in background to allow for user creation
+echo "Starting BC Server in background..."
+wine "$BCSERVER_PATH" /console &
+BC_PID=$!
+
+# Wait for BC Server to be ready by attempting user creation
+echo "Waiting for BC Server to initialize..."
+MAX_ATTEMPTS=30
+ATTEMPT=0
+USER_CREATED=false
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$USER_CREATED" = "false" ]; do
+    echo "Attempting to create BC user 'admin'... (attempt $((ATTEMPT+1))/$MAX_ATTEMPTS)"
+    if /home/scripts/bc/create-bc-user.sh "admin" "$SA_PASSWORD" "SUPER" 2>/dev/null; then
+        echo "Default user 'admin' created successfully"
+        echo "Login credentials: admin / $SA_PASSWORD"
+        USER_CREATED=true
+    else
+        echo "BC Server not ready yet, waiting 2 seconds..."
+        sleep 2
+        ATTEMPT=$((ATTEMPT+1))
+    fi
+done
+
+if [ "$USER_CREATED" = "false" ]; then
+    echo "WARNING: Could not create default user after $MAX_ATTEMPTS attempts"
+    echo "BC Server may not be fully initialized or user already exists"
+    echo "You can manually create users using: /home/scripts/bc/create-bc-user.sh"
+fi
+
 echo "STATUS: BC initialization complete at $(date)" >> "$STATUS_FILE"
-exec wine "$BCSERVER_PATH" /console
+echo "STATUS: Default user creation attempted" >> "$STATUS_FILE"
+
+# Wait for BC Server process to complete
+wait $BC_PID

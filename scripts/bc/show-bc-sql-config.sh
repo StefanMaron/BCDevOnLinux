@@ -2,8 +2,8 @@
 # Script to display SQL settings from BC CustomSettings.config
 
 # Source Wine environment
-if [ -f /home/wine-env.sh ]; then
-    source /home/wine-env.sh >/dev/null 2>&1
+if [ -f /home/scripts/wine/wine-env.sh ]; then
+    source /home/scripts/wine/wine-env.sh >/dev/null 2>&1
 fi
 
 # Define config path

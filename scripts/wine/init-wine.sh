@@ -124,7 +124,7 @@ kill $XVFB_PID 2>/dev/null || true
 rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
 
 # Apply Wine culture fixes if the script exists
-if [ -f "/home/fix-wine-cultures.sh" ]; then
+if [ -f "/home/scripts/wine/fix-wine-cultures.sh" ]; then
     echo "Applying Wine culture fixes..."
-    /home/fix-wine-cultures.sh
+    /home/scripts/wine/fix-wine-cultures.sh
 fi

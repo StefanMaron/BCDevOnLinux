@@ -234,7 +234,7 @@ bc:
 2. **Database Restore Issues**
    - Check backup file: `docker exec bcdevonlinux-bc-1 ls -la /home/bcartifacts/`
    - Check SQL access: `docker exec bcdevonlinux-sql-1 ls -la /bc_artifacts/`
-   - Manual restore: `docker exec bcdevonlinux-bc-1 /home/restore-database.sh`
+   - Manual restore: `docker exec bcdevonlinux-bc-1 /home/scripts/bc/restore-database.sh`
 
 3. **BC Server Status**
    - Check process: `docker exec bcdevonlinux-bc-1 ps aux | grep Nav.Server`

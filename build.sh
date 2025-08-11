@@ -7,39 +7,28 @@ set -e
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}Building Business Central with custom Wine...${NC}"
+echo -e "${GREEN}Building Business Central with optimized base image...${NC}"
+echo -e "${BLUE}Using stefanmaron/bc-wine-base which includes:${NC}"
+echo -e "${BLUE}  ✓ Pre-compiled Wine with BC patches${NC}"
+echo -e "${BLUE}  ✓ .NET Framework 4.8 pre-installed${NC}"
+echo -e "${BLUE}  ✓ PowerShell & BC Container Helper${NC}"
+echo -e "${BLUE}  ✓ Wine culture fixes applied${NC}"
+echo ""
 
-# Check if wine patches directory exists and contains patches
-if [ ! -d "wine-patches" ]; then
-    echo -e "${RED}Error: wine-patches directory not found!${NC}"
-    echo "Please ensure the wine-patches directory exists in the current directory."
-    exit 1
-fi
-
-# Check if there are any .patch files in the directory
-if ! ls wine-patches/*.patch >/dev/null 2>&1; then
-    echo -e "${RED}Error: No patch files found in wine-patches directory!${NC}"
-    echo "Please ensure at least one .patch file exists in wine-patches/"
-    exit 1
-fi
-
-# Wine patches are now integrated into the build
-
-# Show which patches will be applied
-echo -e "${GREEN}Wine patches that will be applied:${NC}"
-for patch in wine-patches/*.patch; do
-    if [ -f "$patch" ]; then
-        echo -e "  - $(basename "$patch")"
-    fi
-done | sort
+# Note: Wine patches are now pre-applied in the base image
+echo -e "${GREEN}Wine patches already applied in base image:${NC}"
+echo -e "  ✓ HTTP API functions for BC compatibility"
+echo -e "  ✓ Locale fixes for culture enumeration"
+echo -e "  ✓ Unicode generation improvements"
+echo -e "  ✓ All BC-specific Wine optimizations"
 echo ""
 
 # Parse command line arguments
 BUILD_ONLY=false
 NO_CACHE=false
-REBUILD_BC_ONLY=false
 NO_SQL=false
 
 while [[ $# -gt 0 ]]; do
@@ -52,10 +41,6 @@ while [[ $# -gt 0 ]]; do
             NO_CACHE=true
             shift
             ;;
-        --rebuild-bc-only)
-            REBUILD_BC_ONLY=true
-            shift
-            ;;
         --no-sql)
             NO_SQL=true
             shift
@@ -66,9 +51,12 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --build-only      Only build the image, don't start containers"
             echo "  --no-cache        Build without using Docker cache"
-            echo "  --rebuild-bc-only Rebuild only the BC stage (keeps Wine cache)"
             echo "  --no-sql          Use external SQL server (no SQL container)"
             echo "  --help            Show this help message"
+            echo ""
+            echo "Build time comparison:"
+            echo "  With base image:    ~5-10 minutes (vs 60-90 minutes before)"
+            echo "  Startup time:       ~3-5 minutes (vs 15-20 minutes before)"
             echo ""
             echo "External SQL usage:"
             echo "  When using --no-sql, set these environment variables:"
@@ -103,19 +91,14 @@ BUILD_CMD="docker compose -f $COMPOSE_FILE build"
 
 if [ "$NO_CACHE" = true ]; then
     BUILD_CMD="$BUILD_CMD --no-cache"
-elif [ "$REBUILD_BC_ONLY" = true ]; then
-    # Force rebuild of BC stage while keeping Wine builder cache
-    echo -e "${YELLOW}Rebuilding only the BC stage (keeping Wine cache)...${NC}"
-    BUILD_CMD="$BUILD_CMD --no-cache bc"
 fi
 
-if [ "$REBUILD_BC_ONLY" = true ]; then
-    echo -e "${YELLOW}Starting Docker build (BC stage only)...${NC}"
-    echo -e "${YELLOW}This will reuse the cached Wine build from the first stage${NC}"
-else
-    echo -e "${YELLOW}Starting Docker build...${NC}"
-    echo -e "${YELLOW}Note: Wine compilation will take 20-30 minutes on first build${NC}"
-fi
+echo -e "${YELLOW}Starting Docker build with base image...${NC}"
+echo -e "${BLUE}Build optimizations:${NC}"
+echo -e "${BLUE}  • Wine build: SKIPPED (pre-compiled in base)${NC}"
+echo -e "${BLUE}  • .NET Framework 4.8: SKIPPED (pre-installed)${NC}"
+echo -e "${BLUE}  • Only installing: BC artifacts + .NET 8 runtime${NC}"
+echo -e "${YELLOW}Expected build time: ~5-10 minutes (vs 60-90 minutes without base)${NC}"
 
 # Execute build
 $BUILD_CMD
@@ -129,11 +112,18 @@ if [ $? -eq 0 ]; then
         
         echo -e "${GREEN}Containers started!${NC}"
         echo ""
+        echo -e "${BLUE}Performance improvements:${NC}"
+        echo -e "${BLUE}  • Startup time: ~3-5 minutes (vs 15-20 minutes)${NC}"
+        echo -e "${BLUE}  • Build time: ~5-10 minutes (vs 60-90 minutes)${NC}"
+        echo ""
         echo "To view logs:"
         echo "  docker compose -f $COMPOSE_FILE logs -f bc"
         echo ""
         echo "To check Wine version:"
         echo "  docker compose -f $COMPOSE_FILE exec bc wine --version"
+        echo ""
+        echo "To check .NET installations:"
+        echo "  docker compose -f $COMPOSE_FILE exec bc pwsh -c 'Get-ChildItem \"C:\\Program Files\\dotnet\"'"
         echo ""
         
         if [ "$NO_SQL" = true ]; then

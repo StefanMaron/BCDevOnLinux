@@ -44,7 +44,7 @@ echo ""
 log_test "Testing basic encryption functionality"
 cat > test-basic.sh << 'EOF'
 #!/bin/bash
-source /home/bc-encryption-functions.sh
+source /home/scripts/bc/bc-encryption-functions.sh
 
 # Create test key
 mkdir -p keys
@@ -76,7 +76,7 @@ fi
 log_test "Testing encryption randomness (different outputs for same input)"
 cat > test-random.sh << 'EOF'
 #!/bin/bash
-source /home/bc-encryption-functions.sh
+source /home/scripts/bc/bc-encryption-functions.sh
 
 # Use the same key from test 1
 PASSWORD="TestPassword123!"
@@ -169,7 +169,7 @@ EOF
 
 cat > test-config.sh << 'EOF'
 #!/bin/bash
-source /home/bc-encryption-functions.sh
+source /home/scripts/bc/bc-encryption-functions.sh
 
 if bc_update_config_password "test-config.xml" "MySecretPass123!" "keys/test.key"; then
     # Check if ProtectedDatabasePassword was added
@@ -266,8 +266,8 @@ fi
 
 # Test 8: Full integration test
 log_test "Full integration test with setup script"
-if [ -f "/home/setup-bc-encryption.sh" ]; then
-    if /home/setup-bc-encryption.sh --keys-dir "$TEST_DIR/full-test" --no-verify-sql >/dev/null 2>&1; then
+if [ -f "/home/scripts/bc/setup-bc-encryption.sh" ]; then
+    if /home/scripts/bc/setup-bc-encryption.sh --keys-dir "$TEST_DIR/full-test" --no-verify-sql >/dev/null 2>&1; then
         if [ -f "$TEST_DIR/full-test/example-database-config.xml" ]; then
             if grep -q "ProtectedDatabasePassword" "$TEST_DIR/full-test/example-database-config.xml"; then
                 log_pass "Full setup script integration works"
