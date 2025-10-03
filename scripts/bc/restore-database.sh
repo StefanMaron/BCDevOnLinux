@@ -117,3 +117,11 @@ if [ -f "/home/scripts/bc/import-encryption-key.sh" ]; then
 else
     echo "Warning: import-encryption-key.sh not found"
 fi
+
+# Import license if needed
+echo "Checking and importing license if needed..."
+if [ -f "/home/scripts/bc/import-license.sh" ]; then
+    /home/scripts/bc/import-license.sh
+else
+    echo "Warning: import-license.sh not found"
+fi
