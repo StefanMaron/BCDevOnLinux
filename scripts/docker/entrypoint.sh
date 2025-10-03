@@ -49,14 +49,6 @@ else
     echo "Database must be restored manually"
 fi
 
-# Setup BC Reporting Service (Proof of Concept)
-# Disabled for BC v26 - SideServices directory not available
-# if [ -f "/home/setup-reporting-service-poc.sh" ]; then
-#     echo "Setting up BC Reporting Service..."
-#     /home/setup-reporting-service-poc.sh
-#     echo "Reporting service setup completed"
-# fi
-
 # Check if BC_AUTOSTART is set to false
 if [ "${BC_AUTOSTART}" = "false" ]; then
     echo "BC_AUTOSTART is set to false. Container will stay running without starting BC Server."

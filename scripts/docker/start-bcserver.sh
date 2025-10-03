@@ -20,7 +20,7 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-export WINEDEBUG="+http,+err,+warn,+trace,+fixme,-thread,-combase,-ntdll,-heap,-bcrypt,-wtsapi,-seh,-nls,-ver,-sync"
+export WINEDEBUG="-all"
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
@@ -40,15 +40,11 @@ if ! pgrep -f "Xvfb :0" > /dev/null; then
     echo "Starting Xvfb for Wine..."
     # Clean up any stale lock files first
     rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
+    export XKB_DEFAULT_LAYOUT=us
     Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX &
     sleep 2
 else
     echo "Xvfb already running"
-fi
-
-# Source the .NET component check function
-if [ -f "/home/tests/check-wine-dotnet.sh" ]; then
-    source /home/tests/check-wine-dotnet.sh
 fi
 
 # Check if Wine prefix exists and has all required components
@@ -61,45 +57,6 @@ else
     echo "Wine prefix found at: $WINEPREFIX"
     echo "Verifying required .NET components are installed..."
     echo "STATUS: Checking .NET components..." >> "$STATUS_FILE"
-    
-    # Check if function is available
-    if type check_wine_dotnet_components &>/dev/null; then
-        if ! check_wine_dotnet_components "$WINEPREFIX"; then
-            echo "Required .NET components are missing!"
-            echo "Running .NET component installation..."
-            echo "STATUS: Installing .NET components - this may take 5-10 minutes..." >> "$STATUS_FILE"
-
-            # Install .NET 8.0.18 Hosting Bundle
-            # if [ -f "/home/scripts/utils/update-dotnet-runtimes.sh" ]; then
-            #     echo "STATUS: Installing .NET 8.0.18 Hosting Bundle..." >> "$STATUS_FILE"
-            #     /home/scripts/utils/update-dotnet-runtimes.sh
-            # elif [ -f "/home/scripts/utils/install-dotnet-components.sh" ]; then
-            #     /home/scripts/utils/install-dotnet-components.sh
-            # else
-            #     echo "WARNING: .NET install scripts not found, running init-wine.sh instead"
-            #     /home/scripts/wine/init-wine.sh
-            # fi
-            echo "WARNING: .NET should be pre-installed in base image"
-
-            echo "STATUS: .NET installation completed, verifying..." >> "$STATUS_FILE"
-            
-            # Verify installation succeeded
-            if ! check_wine_dotnet_components "$WINEPREFIX"; then
-                echo "ERROR: .NET component installation failed!"
-                echo "BC Server may not start correctly without required .NET components"
-                echo "STATUS: ERROR - .NET installation verification failed" >> "$STATUS_FILE"
-                # Continue anyway, but warn the user
-            else
-                echo "STATUS: .NET components successfully installed" >> "$STATUS_FILE"
-            fi
-        else
-            echo "All required .NET components are present"
-            echo "STATUS: All .NET components verified" >> "$STATUS_FILE"
-        fi
-    else
-        echo "WARNING: .NET component check function not available, skipping verification"
-        echo "STATUS: WARNING - Cannot verify .NET components" >> "$STATUS_FILE"
-    fi
 fi
 
 # BC Server path in standard Wine Program Files location
@@ -191,6 +148,7 @@ fi
 echo "Wine environment:"
 echo "  WINEPREFIX: $WINEPREFIX"
 echo "  WINEARCH: $WINEARCH"
+echo "  WINEDEBUG: $WINEDEBUG"
 wine --version
 
 # Change to BC Server directory
@@ -199,10 +157,6 @@ cd "$BCSERVER_DIR"
 # Start BC Server with Wine
 echo "Starting BC Server with Wine..."
 
-# When ReportingServiceIsSideService is false, BC Server manages the reporting service internally
-# So we don't start it separately
-echo "BC Server will manage reporting service internally (ReportingServiceIsSideService=false)"
-
 echo "Command: wine $BCSERVER_PATH /console"
 echo ""
 
@@ -210,38 +164,7 @@ echo ""
 # The custom Wine build handles all locale/culture issues internally
 echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
 
-# Start BC Server in background to allow for user creation
-echo "Starting BC Server in background..."
-wine "$BCSERVER_PATH" /console &
-BC_PID=$!
+# Start BC Server in foreground (required for Wine console processes)
+echo "Starting BC Server..."
+wine Microsoft.Dynamics.Nav.Server.exe '$BusinessCentral260' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log
 
-# Wait for BC Server to be ready by attempting user creation
-echo "Waiting for BC Server to initialize..."
-MAX_ATTEMPTS=30
-ATTEMPT=0
-USER_CREATED=false
-
-while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$USER_CREATED" = "false" ]; do
-    echo "Attempting to create BC user 'admin'... (attempt $((ATTEMPT+1))/$MAX_ATTEMPTS)"
-    if /home/scripts/bc/create-bc-user.sh "admin" "$SA_PASSWORD" "SUPER" 2>/dev/null; then
-        echo "Default user 'admin' created successfully"
-        echo "Login credentials: admin / $SA_PASSWORD"
-        USER_CREATED=true
-    else
-        echo "BC Server not ready yet, waiting 2 seconds..."
-        sleep 2
-        ATTEMPT=$((ATTEMPT+1))
-    fi
-done
-
-if [ "$USER_CREATED" = "false" ]; then
-    echo "WARNING: Could not create default user after $MAX_ATTEMPTS attempts"
-    echo "BC Server may not be fully initialized or user already exists"
-    echo "You can manually create users using: /home/scripts/bc/create-bc-user.sh"
-fi
-
-echo "STATUS: BC initialization complete at $(date)" >> "$STATUS_FILE"
-echo "STATUS: Default user creation attempted" >> "$STATUS_FILE"
-
-# Wait for BC Server process to complete
-wait $BC_PID

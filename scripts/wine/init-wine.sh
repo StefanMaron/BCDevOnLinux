@@ -61,6 +61,7 @@ wine reg add "HKEY_CURRENT_USER\\Software\\Wine" /v "Version" /t REG_SZ /d "win1
 echo "Starting virtual display for .NET installation..."
 # Clean up any stale lock files first
 rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
+export XKB_DEFAULT_LAYOUT=us
 Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX &
 XVFB_PID=$!
 sleep 3
