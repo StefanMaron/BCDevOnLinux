@@ -22,6 +22,8 @@ services:
     volumes:
       - bc_data:/home/bcserver
       - bc_artifacts:/home/bcartifacts
+      # Optional: Mount pre-downloaded artifacts from host (overrides BC_VERSION settings)
+      # - ~/.bcartifacts.cache/sandbox/26.5.38752.40416:/home/bchost-cache:ro
       - wine_data:/root/.wine
       # wine_cache removed - not needed with base image
       - ./secret.key:/home/secret.key:ro  # Mount RSA key directly

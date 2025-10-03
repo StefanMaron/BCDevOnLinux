@@ -13,29 +13,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     BCPORT=7046 \
     BCMANAGEMENTPORT=7045
 
-# Set shell to PowerShell for BC operations (PowerShell already installed in base)
-SHELL ["pwsh", "-Command"]
-
-# Download BC artifacts (BC Container Helper already installed in base)
-RUN Import-Module BcContainerHelper; \
-    $artifactUrl = Get-BCartifactUrl -version $env:BC_VERSION -country $env:BC_COUNTRY -type $env:BC_TYPE; \
-    $artifactPaths = Download-Artifacts $artifactUrl -includePlatform; \
-    Write-Host "Artifact paths received:"; \
-    $artifactPaths | ForEach-Object { Write-Host "  $_" }; \
-    Write-Host "Contents of application artifacts ($($artifactPaths[0])):"; \
-    Get-ChildItem "$($artifactPaths[0])" | ForEach-Object { Write-Host "  $($_.Name)" }; \
-    Write-Host "Contents of platform artifacts ($($artifactPaths[1])):"; \
-    Get-ChildItem "$($artifactPaths[1])" | ForEach-Object { Write-Host "  $($_.Name)" }; \
-    Write-Host "Copying platform artifacts first from: $($artifactPaths[1])"; \
-    Copy-Item -Path "$($artifactPaths[1])/*" -Destination "/home/bcartifacts" -Recurse -Force; \
-    Write-Host "Copying application artifacts second from: $($artifactPaths[0])"; \
-    Copy-Item -Path "$($artifactPaths[0])/*" -Destination "/home/bcartifacts" -Recurse -Force; \
-    Write-Host "Final artifact structure:"; \
-    Get-ChildItem "/home/bcartifacts" -Recurse -Depth 1 | Select-Object FullName | ForEach-Object { Write-Host "  $($_.FullName)" }
-
-# Switch back to bash for remaining operations
-SHELL ["/bin/bash", "-c"]
-
 # Note: .NET 8 installation for BC v26 will happen at runtime in init-wine.sh
 # This avoids Wine initialization issues during Docker build
 
