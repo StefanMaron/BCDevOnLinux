@@ -39,6 +39,15 @@ if [ ! -f "/home/.wine-initialized" ]; then
     echo "Wine and .NET initialization completed"
 fi
 
+# Check and cache BC artifacts
+# Priority: 1) Pre-mounted artifacts, 2) Cached in volume, 3) Download fresh
+echo "Checking BC artifacts..."
+pwsh /home/scripts/bc/cache-artifacts.ps1
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to prepare BC artifacts"
+    exit 1
+fi
+
 # Restore database if needed
 export PATH="$PATH:/opt/mssql-tools18/bin"
 if command -v sqlcmd >/dev/null 2>&1; then
