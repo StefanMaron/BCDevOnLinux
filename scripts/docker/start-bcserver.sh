@@ -1,6 +1,24 @@
 #!/bin/bash
 
 set -e
+set -o pipefail
+
+# PID tracking for graceful shutdown
+BC_PID=0
+
+# Function to handle graceful shutdown
+graceful_shutdown() {
+  echo "Caught signal, shutting down BC Server..."
+  if [ $BC_PID -ne 0 ]; then
+    # Send SIGTERM to the process group
+    kill -TERM -$BC_PID 2>/dev/null || true
+    wait $BC_PID 2>/dev/null || true
+  fi
+  exit 0
+}
+
+# Trap SIGTERM and SIGINT for graceful shutdown
+trap graceful_shutdown SIGTERM SIGINT
 
 echo "Starting BC Server..."
 
@@ -20,7 +38,8 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-export WINEDEBUG="-all"
+#export WINEDEBUG="-all"
+export WINEDEBUG="+http,+winhttp,+httpapi,+advapi,-thread,-combase,-ntdll"  # debugging
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
@@ -157,14 +176,23 @@ cd "$BCSERVER_DIR"
 # Start BC Server with Wine
 echo "Starting BC Server with Wine..."
 
-echo "Command: wine $BCSERVER_PATH /console"
+echo "Command: wine Microsoft.Dynamics.Nav.Server.exe \$BusinessCentral260 /config Microsoft.Dynamics.Nav.Server.dll.config"
 echo ""
 
 # Execute BC Server
 # The custom Wine build handles all locale/culture issues internally
 echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
 
-# Start BC Server in foreground (required for Wine console processes)
-echo "Starting BC Server..."
-wine Microsoft.Dynamics.Nav.Server.exe '$BusinessCentral260' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log
+# Start BC Server in service mode with persistent stdin (required for initialization)
+# The cat | keeps stdin open, preventing BC from exiting prematurely during 1-2 min initialization
+echo "Starting BC Server in service mode..."
+set -m  # Enable job control for proper signal handling
+cat | wine Microsoft.Dynamics.Nav.Server.exe '$BusinessCentral260' /config Microsoft.Dynamics.Nav.Server.dll.config 2>&1 | tee /var/log/bc-server.log &
+BC_PID=$!
+
+echo "BC Server started with PID $BC_PID"
+echo "Waiting for BC Server to initialize (1-2 minutes)..."
+
+# Wait for the background process
+wait $BC_PID
 
