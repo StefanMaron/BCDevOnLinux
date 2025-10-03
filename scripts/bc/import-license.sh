@@ -12,7 +12,7 @@ SA_PASSWORD="${SA_PASSWORD}"
 if [ -z "$DATABASE_NAME" ] && [ -f "/home/CustomSettings.config" ]; then
     DATABASE_NAME=$(grep -oP '(?<=DatabaseName" value=")[^"]+' /home/CustomSettings.config 2>/dev/null || echo "")
 fi
-DATABASE_NAME="${DATABASE_NAME:-CRONUS}"
+DATABASE_NAME="${DATABASE_NAME:-BC}"
 
 # License file location (static path from BC artifacts)
 LICENSE_FILE="/home/bcartifacts/Cronus.bclicense"

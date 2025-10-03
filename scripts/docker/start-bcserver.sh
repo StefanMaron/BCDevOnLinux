@@ -196,6 +196,8 @@ else
     echo "BC Server service already registered"
 fi
 
+./home/scripts/bc/import-license.sh
+
 # Start Wine Service Control Manager
 # This is the Windows service manager that will auto-start BC Server (Start=2 in registry)
 echo "Starting Wine Service Control Manager..."
