@@ -173,26 +173,81 @@ wine --version
 # Change to BC Server directory
 cd "$BCSERVER_DIR"
 
-# Start BC Server with Wine
-echo "Starting BC Server with Wine..."
+# Register BC Server as a Windows service in Wine (if not already registered)
+echo "Checking BC Server service registration..."
+if ! wine reg query 'HKLM\SYSTEM\CurrentControlSet\Services\MicrosoftDynamicsNavServer$BusinessCentral260' 2>/dev/null | grep -q "ImagePath"; then
+    echo "Registering BC Server as a Windows service..."
 
-echo "Command: wine Microsoft.Dynamics.Nav.Server.exe \$BusinessCentral260 /config Microsoft.Dynamics.Nav.Server.dll.config"
-echo ""
+    # Create service registry key
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /f 2>/dev/null
 
-# Execute BC Server
-# The custom Wine build handles all locale/culture issues internally
-echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
+    # Set service configuration matching the VM setup
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v DisplayName /t REG_SZ /d "Microsoft Dynamics 365 Business Central Server [BusinessCentral260]" /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v Description /t REG_SZ /d "Service handling requests to the Microsoft Dynamics 365 Business Central application" /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v ImagePath /t REG_SZ /d "C:\\Program Files\\Microsoft Dynamics NAV\\260\\Service\\Microsoft.Dynamics.Nav.Server.exe \$BusinessCentral260 /config \"C:\\Program Files\\Microsoft Dynamics NAV\\260\\Service\\Microsoft.Dynamics.Nav.Server.dll.config\"" /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v ObjectName /t REG_SZ /d "NT AUTHORITY\\NETWORK SERVICE" /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v Start /t REG_DWORD /d 2 /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v Type /t REG_DWORD /d 16 /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v ErrorControl /t REG_DWORD /d 0 /f 2>/dev/null
+    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v DependOnService /t REG_MULTI_SZ /d "HTTP" /f 2>/dev/null
 
-# Start BC Server in service mode with persistent stdin (required for initialization)
-# The cat | keeps stdin open, preventing BC from exiting prematurely during 1-2 min initialization
-echo "Starting BC Server in service mode..."
-set -m  # Enable job control for proper signal handling
-cat | wine Microsoft.Dynamics.Nav.Server.exe '$BusinessCentral260' /config Microsoft.Dynamics.Nav.Server.dll.config 2>&1 | tee /var/log/bc-server.log &
-BC_PID=$!
+    echo "BC Server service registered successfully"
+else
+    echo "BC Server service already registered"
+fi
 
-echo "BC Server started with PID $BC_PID"
-echo "Waiting for BC Server to initialize (1-2 minutes)..."
+# Start Wine Service Control Manager
+# This is the Windows service manager that will auto-start BC Server (Start=2 in registry)
+echo "Starting Wine Service Control Manager..."
+echo "STATUS: Starting Wine services.exe..." >> "$STATUS_FILE"
 
-# Wait for the background process
-wait $BC_PID
+# Start services.exe in background (this is PID 1's job in the container)
+wine services.exe 2>&1 | tee -a /var/log/bc-server.log &
+SERVICES_PID=$!
+
+echo "Waiting for services.exe to initialize..."
+sleep 5
+
+# Verify services.exe is running
+if ! kill -0 $SERVICES_PID 2>/dev/null; then
+    echo "ERROR: Wine services.exe failed to start"
+    exit 1
+fi
+
+echo "Wine Service Control Manager started (PID: $SERVICES_PID)"
+echo "STATUS: services.exe running, waiting for BC Server auto-start..." >> "$STATUS_FILE"
+
+# Wait for BC Server to auto-start (Start=2 in registry means AUTO_START)
+echo "Waiting for BC Server service to auto-start (1-2 minutes)..."
+for i in {1..60}; do
+    if pgrep -f "Microsoft.Dynamics.Nav.Server.exe" > /dev/null; then
+        BC_PID=$(pgrep -f "Microsoft.Dynamics.Nav.Server.exe")
+        echo "✓ BC Server service auto-started successfully (PID: $BC_PID)"
+        echo "STATUS: BC Server running on PID $BC_PID" >> "$STATUS_FILE"
+        break
+    fi
+    sleep 2
+done
+
+# Verify BC Server is running
+if ! pgrep -f "Microsoft.Dynamics.Nav.Server.exe" > /dev/null; then
+    echo "ERROR: BC Server did not auto-start within 2 minutes"
+    echo "Checking service registration..."
+    wine reg query 'HKLM\SYSTEM\CurrentControlSet\Services\MicrosoftDynamicsNavServer$BusinessCentral260' 2>&1 | head -10
+    echo "Checking logs..."
+    tail -50 /var/log/bc-server.log
+    exit 1
+fi
+
+BC_PID=$(pgrep -f "Microsoft.Dynamics.Nav.Server.exe")
+echo "BC Server is running as Windows service (matching VM setup)"
+echo "Monitoring BC Server process..."
+
+# Monitor the BC Server process - if it exits, container should exit
+while kill -0 $BC_PID 2>/dev/null; do
+    sleep 5
+done
+
+echo "BC Server process has exited"
+exit 1
 
