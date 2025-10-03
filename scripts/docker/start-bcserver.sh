@@ -68,16 +68,19 @@ else
             echo "Required .NET components are missing!"
             echo "Running .NET component installation..."
             echo "STATUS: Installing .NET components - this may take 5-10 minutes..." >> "$STATUS_FILE"
-            echo "STATUS: Installing .NET Framework 4.8..." >> "$STATUS_FILE"
-            
-            # Run the install script
-            if [ -f "/home/scripts/utils/install-dotnet-components.sh" ]; then
-                /home/scripts/utils/install-dotnet-components.sh
-            else
-                echo "WARNING: install-dotnet-components.sh not found, running init-wine.sh instead"
-                /home/scripts/wine/init-wine.sh
-            fi
-            
+
+            # Install .NET 8.0.18 Hosting Bundle
+            # if [ -f "/home/scripts/utils/update-dotnet-runtimes.sh" ]; then
+            #     echo "STATUS: Installing .NET 8.0.18 Hosting Bundle..." >> "$STATUS_FILE"
+            #     /home/scripts/utils/update-dotnet-runtimes.sh
+            # elif [ -f "/home/scripts/utils/install-dotnet-components.sh" ]; then
+            #     /home/scripts/utils/install-dotnet-components.sh
+            # else
+            #     echo "WARNING: .NET install scripts not found, running init-wine.sh instead"
+            #     /home/scripts/wine/init-wine.sh
+            # fi
+            echo "WARNING: .NET should be pre-installed in base image"
+
             echo "STATUS: .NET installation completed, verifying..." >> "$STATUS_FILE"
             
             # Verify installation succeeded
@@ -102,36 +105,36 @@ fi
 # BC Server path in standard Wine Program Files location
 BCSERVER_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.exe"
 if [ ! -f "$BCSERVER_PATH" ]; then
-    echo "BC Server not found in Wine prefix, checking artifacts..."
-    
-    # Look for BC Server in artifacts
-    BC_ARTIFACTS_SERVICE="/home/bcartifacts/ServiceTier/program files/Microsoft Dynamics NAV/260/Service"
-    if [ -d "$BC_ARTIFACTS_SERVICE" ] && [ -f "$BC_ARTIFACTS_SERVICE/Microsoft.Dynamics.Nav.Server.exe" ]; then
-        echo "Found BC Server in artifacts, copying to Wine prefix..."
-        
-        # Create target directory
-        WINE_BC_DIR="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service"
-        mkdir -p "$WINE_BC_DIR"
-        
-        # Copy all service files
-        echo "Copying BC Service files from artifacts to Wine prefix..."
-        cp -r "$BC_ARTIFACTS_SERVICE"/* "$WINE_BC_DIR/"
-        
-        # Create hard link for config file (MSI behavior)
-        if [ ! -f "$WINE_BC_DIR/Microsoft.Dynamics.Nav.Server.exe.config" ]; then
-            cd "$WINE_BC_DIR"
-            ln "Microsoft.Dynamics.Nav.Server.dll.config" "Microsoft.Dynamics.Nav.Server.exe.config" 2>/dev/null || \
-                cp "Microsoft.Dynamics.Nav.Server.dll.config" "Microsoft.Dynamics.Nav.Server.exe.config"
-            cd - > /dev/null
-        fi
-        
-        echo "BC Server files copied successfully"
+    echo "BC Server not found in Wine prefix, installing from MSI..."
+    echo "STATUS: Installing BC Server from MSI..." >> "$STATUS_FILE"
+
+    # Install BC Server using file copy (MSI doesn't work unattended in Wine)
+    if [ -f "/home/scripts/bc/install-bc-files.sh" ]; then
+        bash /home/scripts/bc/install-bc-files.sh
+        echo "STATUS: BC Server file installation completed" >> "$STATUS_FILE"
     else
-        echo "ERROR: BC Server not found in artifacts at: $BC_ARTIFACTS_SERVICE"
-        echo "Available artifact structure:"
-        find /home/bcartifacts -name "Microsoft.Dynamics.Nav.Server.exe" -type f | head -5
+        echo "ERROR: install-bc-files.sh not found!"
         exit 1
     fi
+
+    # Verify installation - check for critical files
+    if [ ! -f "$BCSERVER_PATH" ]; then
+        echo "ERROR: BC Server installation failed - executable not found"
+        exit 1
+    fi
+
+    # Also verify critical runtime files exist
+    if [ ! -f "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.deps.json" ]; then
+        echo "ERROR: deps.json file missing after installation"
+        exit 1
+    fi
+
+    if [ ! -f "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.runtimeconfig.json" ]; then
+        echo "ERROR: runtimeconfig.json file missing after installation"
+        exit 1
+    fi
+
+    echo "BC Server installation verified with all critical files"
 fi
 
 echo "Found BC Server at: $BCSERVER_PATH"

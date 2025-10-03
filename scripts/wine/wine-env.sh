@@ -4,16 +4,9 @@
 export WINEPREFIX="$HOME/.local/share/wineprefixes/bc1"
 export WINEARCH=win64
 export DISPLAY=":0"
-export WINE_SKIP_GECKO_INSTALLATION=1
-export WINE_SKIP_MONO_INSTALLATION=1
 
 # Also set DOTNET_ROOT for BC Server v26
 export DOTNET_ROOT="C:\\Program Files\\dotnet"
-
-# Add Wine to PATH if not already there
-if ! command -v wine &> /dev/null; then
-    export PATH="/opt/wine-custom/bin:$PATH"
-fi
 
 # Helpful aliases
 alias cdbc='cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service"'

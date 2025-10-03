@@ -1,6 +1,7 @@
 # Business Central on Linux using optimized base image
-# Dramatically reduced from ~290 lines to ~60 lines using stefanmaronbc/bc-wine-base
-FROM stefanmaronbc/bc-wine-base:latest
+# Dramatically reduced from ~290 lines to ~60 lines
+ARG BASE_IMAGE=stefanmaronbc/bc-wine-base:latest
+FROM ${BASE_IMAGE}
 
 # Set BC-specific environment variables
 ARG BC_VERSION=26
@@ -16,7 +17,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 SHELL ["pwsh", "-Command"]
 
 # Download BC artifacts (BC Container Helper already installed in base)
-RUN $artifactUrl = Get-BCartifactUrl -version $env:BC_VERSION -country $env:BC_COUNTRY -type $env:BC_TYPE; \
+RUN Import-Module BcContainerHelper; \
+    $artifactUrl = Get-BCartifactUrl -version $env:BC_VERSION -country $env:BC_COUNTRY -type $env:BC_TYPE; \
     $artifactPaths = Download-Artifacts $artifactUrl -includePlatform; \
     Write-Host "Artifact paths received:"; \
     $artifactPaths | ForEach-Object { Write-Host "  $_" }; \
@@ -34,37 +36,34 @@ RUN $artifactUrl = Get-BCartifactUrl -version $env:BC_VERSION -country $env:BC_C
 # Switch back to bash for remaining operations
 SHELL ["/bin/bash", "-c"]
 
-# Install BC version-specific .NET components (only what's not in base image)
-# Base image includes: Wine, .NET Framework 4.8, PowerShell, BC Container Helper, SQL tools
-RUN cd /tmp && \
-    # Install .NET 8 Desktop Runtime (version-specific for BC v26)
-    echo "Installing .NET 8.0.18 Desktop Runtime..." && \
-    wget -q "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.18/windowsdesktop-runtime-8.0.18-win-x64.exe" && \
-    # Start Xvfb for .NET installation
-    rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true && \
-    Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX & \
-    XVFB_PID=$! && \
-    sleep 3 && \
-    wine windowsdesktop-runtime-8.0.18-win-x64.exe /quiet /install /norestart && \
-    rm -f windowsdesktop-runtime-8.0.18-win-x64.exe && \
-    echo ".NET 8 Desktop Runtime installed" && \
-    # Install ASP.NET Core 8.0 hosting bundle (version-specific for BC v26)
-    echo "Installing ASP.NET Core 8.0.18 hosting bundle..." && \
-    wget -q "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/8.0.18/dotnet-hosting-8.0.18-win.exe" && \
-    wine dotnet-hosting-8.0.18-win.exe /quiet /install /norestart && \
-    rm -f dotnet-hosting-8.0.18-win.exe && \
-    echo "ASP.NET Core 8 hosting bundle installed" && \
-    # Stop virtual display and clean up
-    kill $XVFB_PID 2>/dev/null || true && \
-    rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
+# Note: .NET 8 installation for BC v26 will happen at runtime in init-wine.sh
+# This avoids Wine initialization issues during Docker build
 
-# Copy scripts and configuration files
+# Copy scripts, tests, and configuration files
 COPY scripts/ /home/scripts/
+COPY tests/ /home/tests/
 COPY config/CustomSettings.config /home/
 RUN mkdir -p /home/config
 COPY config/secret.key /home/config/
 RUN mkdir -p /home/bcserver && cp /home/CustomSettings.config /home/bcserver/
-RUN find /home/scripts -name "*.sh" -exec chmod +x {} \;
+
+# Copy BC console runner scripts to /home for easy access
+COPY scripts/bc/run-bc-console.sh /home/run-bc-console.sh
+COPY scripts/bc/run-bc-simple.sh /home/run-bc.sh
+
+# Note: BC Server will be installed via MSI at runtime, not copied here
+# The MSI installation will create the proper directory structure and registry entries
+
+# Prepare encryption keys for later installation
+RUN mkdir -p /home/config/Keys && \
+    cp /home/config/secret.key /home/config/Keys/secret.key && \
+    cp /home/config/secret.key /home/config/Keys/bc.key && \
+    cp /home/config/secret.key /home/config/Keys/BusinessCentral260.key && \
+    cp /home/config/secret.key /home/config/Keys/DynamicsNAV90.key
+
+RUN find /home/scripts -name "*.sh" -exec chmod +x {} \; && \
+    find /home/tests -name "*.sh" -exec chmod +x {} \; && \
+    chmod +x /home/run-bc-console.sh /home/run-bc.sh
 
 # Set up Wine environment for all shell sessions (base image provides optimized Wine environment)
 RUN echo "" >> /root/.bashrc && \

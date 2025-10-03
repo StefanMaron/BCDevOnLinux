@@ -13,7 +13,7 @@ services:
       - SQL_SERVER=sql
       - SQL_SERVER_PORT=1433
       - BC_AUTOSTART=false
-      - WINEDEBUG=+http,+err,+warn,+trace,-fixme,-thread
+      - WINEDEBUG=-all
     ports:
       - "7046:7046"  # BC OData
       - "7047:7047"  # BC SOAP

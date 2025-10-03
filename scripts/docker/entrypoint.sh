@@ -4,7 +4,7 @@ set -e
 
 echo "Starting Business Central Container using BC4Ubuntu approach..."
 
-# Source Wine environment
+# Source Wine environment (base image has Wine paths already configured)
 if [ -f /home/scripts/wine/wine-env.sh ]; then
     source /home/scripts/wine/wine-env.sh
 fi
@@ -15,18 +15,28 @@ export SA_PASSWORD=${SA_PASSWORD:-"P@ssw0rd123!"}
 # Skip template generation - use the provided CustomSettings.config
 echo "Using provided CustomSettings.config (template generation skipped)"
 
-# Setup BC encryption keys using bash script
-# if [ ! -f "/home/bcserver/Keys/bc.key" ]; then
-#     echo "Setting up BC encryption..."
-#     /home/scripts/bc/setup-bc-encryption.sh
-# fi
+# Make sure all scripts are executable
+find /home/scripts -name "*.sh" -exec chmod +x {} \;
 
 # Check if this is first run and initialize Wine if needed
 if [ ! -f "/home/.wine-initialized" ]; then
     echo "First run detected, initializing Wine environment..."
-    /home/scripts/wine/init-wine.sh
+
+    # Use base image runtime initialization scripts
+    if [ -f "/usr/local/bin/wine-init-runtime.sh" ]; then
+        echo "Running minimal Wine initialization..."
+        /usr/local/bin/wine-init-runtime.sh
+    fi
+
+    # Install .NET 8 components at runtime (no Docker timeout here)
+    # if [ -f "/usr/local/bin/wine-init-full.sh" ]; then
+    #     echo "Installing .NET 8 runtime components..."
+    #     /usr/local/bin/wine-init-full.sh
+    # fi
+    echo "Note: .NET 8 should be pre-installed in base image"
+
     touch /home/.wine-initialized
-    echo "Wine initialization completed"
+    echo "Wine and .NET initialization completed"
 fi
 
 # Restore database if needed

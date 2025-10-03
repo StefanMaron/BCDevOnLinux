@@ -4,6 +4,9 @@ set -e
 
 echo "Initializing Wine environment using BC4Ubuntu approach..."
 
+# Base image has dynamic linker already configured for Wine
+# Do not run ldconfig as it may interfere with base image configuration
+
 # Ensure en_US.UTF-8 locale is generated
 echo "Generating en_US.UTF-8 locale..."
 locale-gen en_US.UTF-8 || echo "locale-gen failed, continuing..."
@@ -17,6 +20,9 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINEDEBUG=-winediag
 
+# Wine library paths are already configured by base image
+# Do not override LD_LIBRARY_PATH or WINEDLLPATH
+
 # Virtual display will be started only when needed for specific Wine operations
 
 # remove wine prefix folder 
@@ -28,12 +34,24 @@ echo "Creating Wine prefix directory..."
 mkdir -p "$WINEPREFIX"
 
 
-# # Initialize Wine prefix - this is the key step from BC4Ubuntu
-# echo "Initializing Wine prefix..."
-winecfg /v win11
+# Debug: Check environment variables
+echo "Checking Wine environment variables:"
+echo "  WINEDLLPATH: $WINEDLLPATH"
+echo "  LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+echo "  PATH: $PATH"
+echo "  Wine location: $(which wine)"
+echo "  Wine version: $(wine --version || echo 'Wine not working')"
 
-# # Wait for Wine to settle
-# sleep 5
+# Initialize Wine prefix using wineboot (more reliable than winecfg)
+echo "Initializing Wine prefix with wineboot..."
+wineboot --init
+
+# Wait for Wine to settle
+sleep 5
+
+# Configure Windows version after initialization
+echo "Setting Windows version to Windows 11..."
+wine reg add "HKEY_CURRENT_USER\\Software\\Wine" /v "Version" /t REG_SZ /d "win11" /f
 
 # # Install .NET Desktop Runtime 6.0 (BC4Ubuntu approach)
 # echo "Installing .NET Desktop Runtime 6.0..."
@@ -47,51 +65,29 @@ Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX &
 XVFB_PID=$!
 sleep 3
 
-# Install .NET Framework 4.8 first (BC Server v26 needs this for main server)
-echo "Installing .NET Framework 4.8..."
-winetricks prefix=bc1 -q dotnet48
+# Note: .NET 8 installation can be handled by:
+# - /home/scripts/utils/update-dotnet-runtimes.sh for .NET 8.0.18 Hosting Bundle (recommended for BC v26)
+# - /usr/local/bin/wine-init-runtime.sh for minimal Wine setup
+# - /usr/local/bin/wine-init-full.sh for .NET 8 runtime installation
+# echo "Installing .NET 8.0.18 Hosting Bundle for BC v26..."
+# if [ -f "/home/scripts/utils/update-dotnet-runtimes.sh" ]; then
+#     /home/scripts/utils/update-dotnet-runtimes.sh
+# else
+#     echo "Note: .NET installation handled by base image runtime scripts"
+# fi
+echo "Note: .NET 8 should be pre-installed in base image"
 
-# Wait for .NET Framework installation to settle
-sleep 5
-
-# Install .NET Desktop Runtime 8.0 directly (BC Server v26 needs this)
-echo "Installing .NET Desktop Runtime 8.0..."
-cd /tmp
-wget -q "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.18/windowsdesktop-runtime-8.0.18-win-x64.exe" || {
-    echo "Failed to download .NET Desktop Runtime 8.0"
-    exit 1
-}
-wine windowsdesktop-runtime-8.0.18-win-x64.exe /quiet /install /norestart
-rm -f windowsdesktop-runtime-8.0.18-win-x64.exe
-echo ".NET Desktop Runtime 8.0 installation completed"
-
-# Now install ASP.NET Core 8.0 hosting bundle which BC Server v26 also needs
-echo "Installing ASP.NET Core 8.0 hosting bundle for BC Server v26..."
-cd /tmp
-
-# Download and install ASP.NET Core Runtime 8.0.18 directly from Microsoft
-echo "Downloading ASP.NET Core Runtime 8.0.18..."
-ASPNET_INSTALLER="dotnet-hosting-8.0.18-win.exe"
-ASPNET_URL="https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/8.0.18/${ASPNET_INSTALLER}"
-
-# Download the installer
-wget -O "/tmp/${ASPNET_INSTALLER}" "${ASPNET_URL}" || {
-    echo "Failed to download ASP.NET Core Runtime 8.0.18"
-    echo "You may need to install it manually later"
-    exit 1
-}
-
-echo "Installing ASP.NET Core Runtime 8.0.18 via Wine..."
-
-# Run the installer
-WINEPREFIX="$WINEPREFIX" wine "/tmp/${ASPNET_INSTALLER}" /quiet /install /norestart
-
-# Stop virtual display (moved to end of script)
-
-# Clean up the installer
-rm -f "/tmp/${ASPNET_INSTALLER}"
-
-echo "ASP.NET Core Runtime 8.0.18 installation completed"
+# .NET Framework 4.8 installation disabled per user request
+# if [ ! -d "$WINEPREFIX/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319" ]; then
+#     echo "Installing .NET Framework 4.8..."
+#     WINEDLLPATH="/usr/local/lib/wine/x86_64-unix:/usr/local/lib/wine/x86_64-windows" \
+#     LD_LIBRARY_PATH="/usr/local/lib/wine/x86_64-unix:/usr/local/lib:${LD_LIBRARY_PATH}" \
+#     winetricks prefix=bc1 -q dotnet48
+#     echo ".NET Framework 4.8 installation completed"
+# else
+#     echo ".NET Framework 4.8 already installed"
+# fi
+echo "Skipping .NET Framework 4.8 installation (disabled)"
 
 # Set Windows version to Windows 10 for better compatibility
 echo "Setting Windows version to Windows 10..."
