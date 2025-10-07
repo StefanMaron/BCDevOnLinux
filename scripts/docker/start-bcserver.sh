@@ -20,7 +20,7 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-export WINEDEBUG="-all"
+export WINEDEBUG="+eventlog,+http,+winhttp,+httpapi,+advapi,-thread,-combase,-ntdll"
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
@@ -166,5 +166,20 @@ echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
 
 # Start BC Server in foreground (required for Wine console processes)
 echo "Starting BC Server..."
-wine Microsoft.Dynamics.Nav.Server.exe '$BusinessCentral260' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log
+# COMMENTED OUT FOR MANUAL DEBUGGING:
+# wine Microsoft.Dynamics.Nav.Server.exe '$BC' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log
+
+echo ""
+echo "=============================================="
+echo "BC Server startup disabled for manual debugging"
+echo "=============================================="
+echo ""
+echo "To start BC Server manually, run:"
+echo "  wine Microsoft.Dynamics.Nav.Server.exe '\$BC' /config Microsoft.Dynamics.Nav.Server.dll.config /console"
+echo ""
+echo "Container will stay alive. Use 'docker exec' to access and start the service."
+echo ""
+
+# Keep container alive
+tail -f /dev/null
 

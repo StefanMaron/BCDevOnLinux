@@ -5,6 +5,7 @@ services:
       dockerfile: dockerfile
       args:
         BUILDKIT_PROGRESS: plain  # Show full build output
+        BASE_IMAGE: ${BASE_IMAGE:-stefanmaronbc/bc-wine-base:latest}
     depends_on:
       sql:
         condition: service_healthy

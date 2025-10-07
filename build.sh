@@ -30,6 +30,7 @@ echo ""
 BUILD_ONLY=false
 NO_CACHE=false
 NO_SQL=false
+DEV_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -45,24 +46,52 @@ while [[ $# -gt 0 ]]; do
             NO_SQL=true
             shift
             ;;
+        -d|--dev)
+            DEV_MODE=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Default behavior: Builds image AND starts containers"
             echo ""
             echo "Options:"
             echo "  --build-only      Only build the image, don't start containers"
             echo "  --no-cache        Build without using Docker cache"
             echo "  --no-sql          Use external SQL server (no SQL container)"
+            echo "  -d, --dev         Use locally built base image (bc-wine-base:local)"
             echo "  --help            Show this help message"
+            echo ""
+            echo "Options can be combined, e.g.: $0 --no-cache --build-only"
             echo ""
             echo "Build time comparison:"
             echo "  With base image:    ~5-10 minutes (vs 60-90 minutes before)"
             echo "  Startup time:       ~3-5 minutes (vs 15-20 minutes before)"
             echo ""
-            echo "External SQL usage:"
-            echo "  When using --no-sql, set these environment variables:"
-            echo "    SQL_SERVER=<your-sql-server-hostname>"
-            echo "    SQL_SERVER_PORT=<port> (default: 1433)"
-            echo "    SA_PASSWORD=<sql-password>"
+            echo "Compose files (auto-selected):"
+            echo "  compose.yml           Default with local SQL container"
+            echo "  compose-no-sql.yml    With --no-sql flag"
+            echo ""
+            echo "Environment variables for external SQL (--no-sql):"
+            echo "  SQL_SERVER=<hostname>        Required: SQL server hostname/IP"
+            echo "  SQL_SERVER_PORT=<port>       Optional: SQL port (default: 1433)"
+            echo "  SA_PASSWORD=<password>       Required: SQL SA password"
+            echo ""
+            echo "Development workflow (testing base image changes):"
+            echo "  1. Build base image:         cd ~/BCOnLinuxBase && ./build-local.sh"
+            echo "  2. Test in BCDevOnLinux:     cd ~/BCDevOnLinux-e036ace && ./build.sh --dev"
+            echo "  3. Iterate and rebuild:      ./build.sh --dev --no-cache"
+            echo ""
+            echo "Base image customization:"
+            echo "  BASE_IMAGE=<image>           Override the base Docker image"
+            echo "    Default:                   stefanmaronbc/bc-wine-base:latest"
+            echo "  --dev flag sets:             bc-wine-base:local"
+            echo ""
+            echo "Examples:"
+            echo "  Development mode:            ./build.sh --dev"
+            echo "  Dev with fresh build:        ./build.sh --dev --no-cache"
+            echo "  Dev build only:              ./build.sh --dev --build-only"
+            echo "  Custom base image:           BASE_IMAGE=ubuntu:24.04 ./build.sh"
             exit 0
             ;;
         *)
@@ -71,6 +100,22 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Handle dev mode - use locally built base image
+if [ "$DEV_MODE" = true ]; then
+    export BASE_IMAGE="bc-wine-base:local"
+    echo -e "${YELLOW}Dev mode: Using locally built base image (bc-wine-base:local)${NC}"
+
+    # Check if the local image exists
+    if ! docker image inspect bc-wine-base:local &>/dev/null; then
+        echo -e "${RED}Warning: bc-wine-base:local image not found!${NC}"
+        echo -e "${YELLOW}Build it first with:${NC}"
+        echo "  cd ~/BCOnLinuxBase && ./build-local.sh"
+        echo ""
+        exit 1
+    fi
+    echo ""
+fi
 
 # Determine which compose file to use
 if [ "$NO_SQL" = true ]; then
@@ -84,6 +129,14 @@ if [ "$NO_SQL" = true ]; then
     fi
 else
     COMPOSE_FILE="compose.yml"
+fi
+
+# Pull the latest base image (unless in dev mode)
+if [ "$DEV_MODE" != true ]; then
+    BASE_IMAGE_TO_PULL="${BASE_IMAGE:-stefanmaronbc/bc-wine-base:latest}"
+    echo -e "${YELLOW}Pulling latest base image: ${BASE_IMAGE_TO_PULL}${NC}"
+    docker pull "$BASE_IMAGE_TO_PULL"
+    echo ""
 fi
 
 # Build command
