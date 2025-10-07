@@ -28,18 +28,45 @@ if (Test-Path "$DestinationPath/ServiceTier") {
 
 # Check if pre-downloaded artifacts are mounted
 if (Test-Path $PreDownloadedPath) {
-    # Find ServiceTier in the pre-downloaded path (handles nested structures)
-    $serviceTierPath = Get-ChildItem -Path $PreDownloadedPath -Filter "ServiceTier" -Directory -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Get all subdirectories in the pre-downloaded path (platform and application folders)
+    $subfolders = Get-ChildItem -Path $PreDownloadedPath -Directory | Sort-Object Name -Descending
 
-    if ($serviceTierPath) {
+    if ($subfolders.Count -gt 0) {
         Write-Host "✓ Pre-downloaded artifacts found" -ForegroundColor Green
-        $sourcePath = $serviceTierPath.Parent.FullName
-        Write-Host "  Source: $sourcePath" -ForegroundColor Cyan
+        Write-Host "  Found $($subfolders.Count) folder(s) in $PreDownloadedPath" -ForegroundColor Cyan
         Write-Host "  Copying to cache: $DestinationPath" -ForegroundColor Yellow
 
-        Copy-Item -Path "$sourcePath/*" -Destination $DestinationPath -Recurse -Force
+        # Copy all content from each subfolder to destination (mimics Download-Artifacts behavior)
+        # Platform first (base layer), then application (overlay)
+        foreach ($folder in $subfolders) {
+            Write-Host "  Copying from: $($folder.Name)" -ForegroundColor Cyan
+            Copy-Item -Path "$($folder.FullName)/*" -Destination $DestinationPath -Recurse -Force
+        }
+
+        # Flatten if ServiceTier is nested in a subdirectory (same as download path)
+        $serviceTierPath = Get-ChildItem -Path $DestinationPath -Filter "ServiceTier" -Directory -Recurse -Depth 2 | Select-Object -First 1
+        if ($serviceTierPath -and $serviceTierPath.FullName -ne "$DestinationPath/ServiceTier") {
+            Write-Host "  Flattening nested artifact structure..." -ForegroundColor Yellow
+            $parentDir = $serviceTierPath.Parent.FullName
+            Get-ChildItem -Path $parentDir | ForEach-Object {
+                Copy-Item -Path $_.FullName -Destination $DestinationPath -Recurse -Force
+            }
+            # Clean up the now-redundant parent directory
+            Remove-Item -Path $parentDir -Recurse -Force
+            Write-Host "  Structure flattened" -ForegroundColor Green
+        }
 
         Write-Host "✓ Pre-downloaded artifacts cached" -ForegroundColor Green
+
+        # Display contents of destination path
+        Write-Host "`nCached artifact contents:" -ForegroundColor Cyan
+        Get-ChildItem -Path $DestinationPath | ForEach-Object {
+            if ($_.PSIsContainer) {
+                Write-Host "  📁 $($_.Name)" -ForegroundColor Yellow
+            } else {
+                Write-Host "  📄 $($_.Name)" -ForegroundColor White
+            }
+        }
         exit 0
     }
 }
