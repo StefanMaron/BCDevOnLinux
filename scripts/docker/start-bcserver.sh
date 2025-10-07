@@ -1,6 +1,24 @@
 #!/bin/bash
 
 set -e
+set -o pipefail
+
+# PID tracking for graceful shutdown
+BC_PID=0
+
+# Function to handle graceful shutdown
+graceful_shutdown() {
+  echo "Caught signal, shutting down BC Server..."
+  if [ $BC_PID -ne 0 ]; then
+    # Send SIGTERM to the process group
+    kill -TERM -$BC_PID 2>/dev/null || true
+    wait $BC_PID 2>/dev/null || true
+  fi
+  exit 0
+}
+
+# Trap SIGTERM and SIGINT for graceful shutdown
+trap graceful_shutdown SIGTERM SIGINT
 
 echo "Starting BC Server..."
 
@@ -20,7 +38,7 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-export WINEDEBUG="+eventlog,+http,+winhttp,+httpapi,+advapi,-thread,-combase,-ntdll"
+export WINEDEBUG="+eventlog,+http,+httpapi,+advapi,-thread,-combase,-ntdll"
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
@@ -154,32 +172,21 @@ wine --version
 # Change to BC Server directory
 cd "$BCSERVER_DIR"
 
-# Start BC Server with Wine
-echo "Starting BC Server with Wine..."
-
-echo "Command: wine $BCSERVER_PATH /console"
-echo ""
-
 # Execute BC Server
 # The custom Wine build handles all locale/culture issues internally
 echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
 
-# Start BC Server in foreground (required for Wine console processes)
-echo "Starting BC Server..."
-# COMMENTED OUT FOR MANUAL DEBUGGING:
-# wine Microsoft.Dynamics.Nav.Server.exe '$BC' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log
+# Start BC Server in console mode with persistent stdin
+# The /console flag activates HTTP listeners immediately
+# tail -f /dev/null keeps stdin open indefinitely without producing output
+echo "Starting BC Server in console mode..."
+set -m  # Enable job control for proper signal handling
+tail -f /dev/null | wine Microsoft.Dynamics.Nav.Server.exe '$BC' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log &
+BC_PID=$!
 
-echo ""
-echo "=============================================="
-echo "BC Server startup disabled for manual debugging"
-echo "=============================================="
-echo ""
-echo "To start BC Server manually, run:"
-echo "  wine Microsoft.Dynamics.Nav.Server.exe '\$BC' /config Microsoft.Dynamics.Nav.Server.dll.config /console"
-echo ""
-echo "Container will stay alive. Use 'docker exec' to access and start the service."
-echo ""
+echo "BC Server started with PID $BC_PID"
+echo "Waiting for BC Server to initialize (1-2 minutes)..."
 
-# Keep container alive
-tail -f /dev/null
+# Wait for the background process
+wait $BC_PID
 
