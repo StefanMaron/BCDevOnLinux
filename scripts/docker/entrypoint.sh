@@ -58,14 +58,54 @@ else
     echo "Database must be restored manually"
 fi
 
+# Build BCPasswordHasher for user creation
+echo "Building BCPasswordHasher..."
+if command -v dotnet >/dev/null 2>&1; then
+    if [ -f /home/scripts/bc/BCPasswordHasher/BCPasswordHasher.csproj ]; then
+        dotnet build /home/scripts/bc/BCPasswordHasher/BCPasswordHasher.csproj -c Release > /dev/null 2>&1 || \
+        dotnet build /home/scripts/bc/BCPasswordHasher/BCPasswordHasher.csproj > /dev/null 2>&1
+        echo "BCPasswordHasher built successfully"
+    fi
+else
+    echo "WARNING: .NET SDK not found. User creation will not work."
+fi
+
+# Create default admin user on first run
+if [ ! -f "/home/.admin-user-created" ] && command -v sqlcmd >/dev/null 2>&1; then
+    echo "Creating default admin user..."
+    ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
+
+    # Wait for SQL Server to be ready
+    for i in {1..30}; do
+        if sqlcmd -S "${SQL_SERVER:-sql}" -U sa -P "${SA_PASSWORD}" -Q "SELECT 1" -C -N > /dev/null 2>&1; then
+            echo "SQL Server is ready"
+            break
+        fi
+        echo "Waiting for SQL Server... ($i/30)"
+        sleep 2
+    done
+
+    # Create admin user using our SQL script
+    if /home/scripts/bc/create-bc-user.sh admin "${ADMIN_PASSWORD}" SUPER 2>&1; then
+        echo "✅ Default admin user created successfully"
+        echo "   Username: admin"
+        echo "   Password: ${ADMIN_PASSWORD}"
+        echo "   Permission Set: SUPER"
+        touch /home/.admin-user-created
+    else
+        echo "⚠️  Failed to create admin user (will retry on next start)"
+    fi
+fi
+
 # Check if BC_AUTOSTART is set to false
 if [ "${BC_AUTOSTART}" = "false" ]; then
     echo "BC_AUTOSTART is set to false. Container will stay running without starting BC Server."
     echo "To start BC Server manually, run:"
     echo "  /home/scripts/docker/start-bcserver.sh"
     echo ""
-    echo "To create a BC user, run:"
-    echo "  /home/scripts/bc/create-bc-user.sh [username] [password] [permission_set]"
+    echo "To create additional BC users, run:"
+    echo "  /home/scripts/bc/create-bc-user.sh <username> <password> [permission_set]"
+    echo "  Example: /home/scripts/bc/create-bc-user.sh john 'Pass123!' SUPER"
     echo ""
     echo "Container is ready for debugging..."
     # Keep container running
