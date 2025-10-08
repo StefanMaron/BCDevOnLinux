@@ -21,6 +21,7 @@ services:
       - "7047:7047"  # BC SOAP Services
       - "7048:7048"  # BC OData Services
       - "7049:7049"  # BC Development Services
+      - "7086:7086"
     volumes:
       - bc_data:/home/bcserver
       - bc_artifacts:/home/bcartifacts
