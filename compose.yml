@@ -32,7 +32,7 @@ services:
       - bc-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'Microsoft.Dynamics.Nav.Server.exe' || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f 'Microsoft.Dynamics.Nav.Server.exe' && netstat -tln | grep -q ':7048' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

@@ -185,7 +185,27 @@ tail -f /dev/null | wine Microsoft.Dynamics.Nav.Server.exe '$BC' /config Microso
 BC_PID=$!
 
 echo "BC Server started with PID $BC_PID"
-echo "Waiting for BC Server to initialize (1-2 minutes)..."
+echo "Waiting for BC Server to initialize..."
+
+# Monitor log for readiness message
+timeout=180  # 3 minutes timeout
+elapsed=0
+while [ $elapsed -lt $timeout ]; do
+    if grep -q "Press Enter to stop the console server" /var/log/bc-server.log; then
+        echo "✓ BC Server is ready for connections!"
+        break
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+    if [ $((elapsed % 10)) -eq 0 ]; then
+        echo "Still initializing... ($elapsed seconds elapsed)"
+    fi
+done
+
+if [ $elapsed -ge $timeout ]; then
+    echo "⚠ Timeout waiting for BC Server readiness message"
+    echo "Check /var/log/bc-server.log for details"
+fi
 
 # Wait for the background process
 wait $BC_PID
