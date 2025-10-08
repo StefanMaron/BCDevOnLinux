@@ -58,17 +58,8 @@ else
     echo "Database must be restored manually"
 fi
 
-# Build BCPasswordHasher for user creation
-echo "Building BCPasswordHasher..."
-if command -v dotnet >/dev/null 2>&1; then
-    if [ -f /home/scripts/bc/BCPasswordHasher/BCPasswordHasher.csproj ]; then
-        dotnet build /home/scripts/bc/BCPasswordHasher/BCPasswordHasher.csproj -c Release > /dev/null 2>&1 || \
-        dotnet build /home/scripts/bc/BCPasswordHasher/BCPasswordHasher.csproj > /dev/null 2>&1
-        echo "BCPasswordHasher built successfully"
-    fi
-else
-    echo "WARNING: .NET SDK not found. User creation will not work."
-fi
+# BCPasswordHasher binaries are pre-built and included in the image
+# No runtime compilation needed
 
 # Create default admin user on first run
 if [ ! -f "/home/.admin-user-created" ] && command -v sqlcmd >/dev/null 2>&1; then
