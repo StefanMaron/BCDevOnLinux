@@ -114,52 +114,50 @@ fi
 
 echo "Found BC Server at: $BCSERVER_PATH"
 
+# IMPORTANT: Config copy happens EVERY TIME, not just on first install
+# This ensures our custom config always overwrites any artifact defaults
+echo ""
+echo "========================================="
+echo "FORCE COPYING CONFIGURATION FILES"
+echo "This runs on every container start to ensure correct settings"
+echo "========================================="
 
-# Copy configuration and key files to Wine prefix (BC4Ubuntu approach)
-echo "Copying configuration files to Wine prefix..."
 BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
 mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
 
 # FORCE OVERWRITE the config file - this is critical!
-if [ -f "/home/bcserver/CustomSettings.config" ]; then
-    echo "Forcing copy of CustomSettings.config from /home/bcserver/"
-    cp -f "/home/bcserver/CustomSettings.config" "$BCSERVER_DIR/CustomSettings.config"
-    echo "Config copied and overwritten successfully"
-elif [ -f "/home/CustomSettings.config" ]; then
-    echo "Forcing copy of CustomSettings.config from /home/"
+# Note: /home/bcserver/ was a legacy location, now removed
+if [ -f "/home/CustomSettings.config" ]; then
+    echo "✓ Forcing copy of CustomSettings.config from /home/"
     cp -f "/home/CustomSettings.config" "$BCSERVER_DIR/CustomSettings.config"
-    echo "Config copied and overwritten successfully"
-    # Verify the copy worked
-    echo "Verifying DatabaseInstance setting in copied file:"
-    grep "DatabaseInstance" "$BCSERVER_DIR/CustomSettings.config" | head -1
+    echo "✓ Config copied and overwritten successfully"
 else
-    echo "ERROR: CustomSettings.config not found in /home/bcserver/ or /home/"
-    echo "BC will use the default config from artifacts (which has DatabaseInstance=MSSQLSERVER)"
+    echo "✗ ERROR: CustomSettings.config not found at /home/CustomSettings.config"
+    echo "BC will use the default config from artifacts"
     exit 1
 fi
 
-# Check for encryption keys - prioritize /home/bcserver/ location
-if [ -f "/home/bcserver/Keys/bc.key" ]; then
-    echo "Using bc.key from /home/bcserver/Keys/"
-    # Copy to ProgramData locations
-    cp "/home/bcserver/Keys/bc.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
-    
-    echo "Encryption keys copied to all required locations"
-elif [ -f "/home/config/secret.key" ]; then
-    echo "Using RSA key from /home/config/secret.key (fallback location)"
+# VERIFY the critical settings were applied correctly
+echo ""
+echo "Verifying critical configuration settings:"
+echo "  DatabaseInstance: $(grep -m1 'key="DatabaseInstance"' "$BCSERVER_DIR/CustomSettings.config" | sed 's/.*value="\([^"]*\)".*/\1/')"
+echo "  ClientServicesCredentialType: $(grep -m1 'key="ClientServicesCredentialType"' "$BCSERVER_DIR/CustomSettings.config" | sed 's/.*value="\([^"]*\)".*/\1/')"
+echo "  DatabaseServer: $(grep -m1 'key="DatabaseServer"' "$BCSERVER_DIR/CustomSettings.config" | sed 's/.*value="\([^"]*\)".*/\1/')"
+echo ""
+
+# Copy encryption keys (legacy /home/bcserver/ location removed)
+if [ -f "/home/config/secret.key" ]; then
+    echo "✓ Using RSA key from /home/config/secret.key"
     # Copy to all required locations in Wine prefix
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BusinessCentral260.key"
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BC.key"
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/bc.key"
-    
-    echo "RSA encryption keys copied to all required locations"
+
+    echo "✓ RSA encryption keys copied to all required locations"
 else
-    echo "ERROR: No encryption key found!"
-    echo "Expected locations (in priority order):"
-    echo "  1. /home/bcserver/secret.key (RSA key)"
-    echo "  2. /home/bcserver/Keys/bc.key"
-    echo "  3. /home/config/secret.key (fallback)"
+    echo "✗ ERROR: No encryption key found at /home/config/secret.key"
+    exit 1
 fi
 
 # Verify Wine environment

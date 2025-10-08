@@ -22,7 +22,6 @@ COPY tests/ /home/tests/
 COPY config/CustomSettings.config /home/
 RUN mkdir -p /home/config
 COPY config/secret.key /home/config/
-RUN mkdir -p /home/bcserver && cp /home/CustomSettings.config /home/bcserver/
 
 # Copy BC console runner scripts to /home for easy access
 COPY scripts/bc/run-bc-console.sh /home/run-bc-console.sh
