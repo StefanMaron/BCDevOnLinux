@@ -50,7 +50,7 @@ RUN echo "" >> /root/.bashrc && \
     echo "fi" >> /root/.bashrc
 
 # Expose BC ports
-EXPOSE 7046 7047 7048 7049
+EXPOSE 7045 7046 7047 7048 7049
 
 # Set entrypoint
 ENTRYPOINT ["/home/scripts/docker/entrypoint.sh"]

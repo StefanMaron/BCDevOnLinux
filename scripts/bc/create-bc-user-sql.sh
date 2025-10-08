@@ -143,12 +143,31 @@ log_success "Username is available"
 
 # Step 3: Generate password hash
 log_info "Step 3/5: Hashing password..."
-# Use C# implementation with BC's exact algorithm
-PASSWORD_HASH=$(dotnet run --project "$SCRIPT_DIR/BCPasswordHasher/BCPasswordHasher.csproj" "$PASSWORD" "$USER_GUID" 2>/dev/null)
 
-if [ $? -ne 0 ] || [ -z "$PASSWORD_HASH" ]; then
+# Determine which BCPasswordHasher binary to use
+HASHER_BIN=""
+if [ -f "$SCRIPT_DIR/BCPasswordHasher/bin/Release/net8.0/BCPasswordHasher" ]; then
+    HASHER_BIN="$SCRIPT_DIR/BCPasswordHasher/bin/Release/net8.0/BCPasswordHasher"
+elif [ -f "$SCRIPT_DIR/BCPasswordHasher/bin/Debug/net8.0/BCPasswordHasher" ]; then
+    HASHER_BIN="$SCRIPT_DIR/BCPasswordHasher/bin/Debug/net8.0/BCPasswordHasher"
+elif [ -f "$SCRIPT_DIR/BCPasswordHasher/bin/Release/net8.0/BCPasswordHasher.dll" ]; then
+    HASHER_BIN="dotnet $SCRIPT_DIR/BCPasswordHasher/bin/Release/net8.0/BCPasswordHasher.dll"
+elif [ -f "$SCRIPT_DIR/BCPasswordHasher/bin/Debug/net8.0/BCPasswordHasher.dll" ]; then
+    HASHER_BIN="dotnet $SCRIPT_DIR/BCPasswordHasher/bin/Debug/net8.0/BCPasswordHasher.dll"
+else
+    log_error "BCPasswordHasher binary not found"
+    log_error "Expected at: $SCRIPT_DIR/BCPasswordHasher/bin/{Release|Debug}/net8.0/BCPasswordHasher"
+    exit 1
+fi
+
+# Generate password hash using BC's exact algorithm
+PASSWORD_HASH=$($HASHER_BIN "$PASSWORD" "$USER_GUID" 2>&1)
+HASH_EXIT_CODE=$?
+
+if [ $HASH_EXIT_CODE -ne 0 ] || [ -z "$PASSWORD_HASH" ]; then
     log_error "Failed to generate password hash"
-    log_error "Make sure .NET 8 is installed and BCPasswordHasher is built"
+    log_error "BCPasswordHasher output: $PASSWORD_HASH"
+    log_error "Using: $HASHER_BIN"
     exit 1
 fi
 log_success "Password hashed successfully (${PASSWORD_HASH:0:20}...)"
