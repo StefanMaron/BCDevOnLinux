@@ -31,6 +31,7 @@ BUILD_ONLY=false
 NO_CACHE=false
 NO_SQL=false
 DEV_MODE=false
+DEV_OPTIMIZED=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -50,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             DEV_MODE=true
             shift
             ;;
+        --dev-optimized)
+            DEV_OPTIMIZED=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -60,6 +65,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-cache        Build without using Docker cache"
             echo "  --no-sql          Use external SQL server (no SQL container)"
             echo "  -d, --dev         Use locally built base image (bc-wine-base:local)"
+            echo "  --dev-optimized   Use locally built optimized base image (bc-wine-base:local-optimized)"
             echo "  --help            Show this help message"
             echo ""
             echo "Options can be combined, e.g.: $0 --no-cache --build-only"
@@ -78,18 +84,26 @@ while [[ $# -gt 0 ]]; do
             echo "  SA_PASSWORD=<password>       Required: SQL SA password"
             echo ""
             echo "Development workflow (testing base image changes):"
-            echo "  1. Build base image:         cd ~/BCOnLinuxBase && ./build-local.sh"
-            echo "  2. Test in BCDevOnLinux:     cd ~/BCDevOnLinux-e036ace && ./build.sh --dev"
-            echo "  3. Iterate and rebuild:      ./build.sh --dev --no-cache"
+            echo "  Standard variant:"
+            echo "    1. Build base image:       cd ~/BCOnLinuxBase && ./build-local.sh"
+            echo "    2. Test in BCDevOnLinux:   cd ~/BCDevOnLinux-e036ace && ./build.sh --dev"
+            echo "    3. Iterate and rebuild:    ./build.sh --dev --no-cache"
+            echo "  Optimized variant:"
+            echo "    1. Build base image:       cd ~/BCOnLinuxBase && ./build-local.sh --variant optimized"
+            echo "    2. Test in BCDevOnLinux:   cd ~/BCDevOnLinux-e036ace && ./build.sh --dev-optimized"
+            echo "    3. Iterate and rebuild:    ./build.sh --dev-optimized --no-cache"
             echo ""
             echo "Base image customization:"
             echo "  BASE_IMAGE=<image>           Override the base Docker image"
             echo "    Default:                   stefanmaronbc/bc-wine-base:latest"
             echo "  --dev flag sets:             bc-wine-base:local"
+            echo "  --dev-optimized flag sets:   bc-wine-base:local-optimized"
             echo ""
             echo "Examples:"
             echo "  Development mode:            ./build.sh --dev"
+            echo "  Dev optimized mode:          ./build.sh --dev-optimized"
             echo "  Dev with fresh build:        ./build.sh --dev --no-cache"
+            echo "  Dev optimized fresh build:   ./build.sh --dev-optimized --no-cache"
             echo "  Dev build only:              ./build.sh --dev --build-only"
             echo "  Custom base image:           BASE_IMAGE=ubuntu:24.04 ./build.sh"
             exit 0
@@ -101,6 +115,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Check for mutually exclusive flags
+if [ "$DEV_MODE" = true ] && [ "$DEV_OPTIMIZED" = true ]; then
+    echo -e "${RED}Error: --dev and --dev-optimized cannot be used together${NC}"
+    echo "Choose one:"
+    echo "  --dev           for bc-wine-base:local"
+    echo "  --dev-optimized for bc-wine-base:local-optimized"
+    exit 1
+fi
+
 # Handle dev mode - use locally built base image
 if [ "$DEV_MODE" = true ]; then
     export BASE_IMAGE="bc-wine-base:local"
@@ -111,6 +134,22 @@ if [ "$DEV_MODE" = true ]; then
         echo -e "${RED}Warning: bc-wine-base:local image not found!${NC}"
         echo -e "${YELLOW}Build it first with:${NC}"
         echo "  cd ~/BCOnLinuxBase && ./build-local.sh"
+        echo ""
+        exit 1
+    fi
+    echo ""
+fi
+
+# Handle dev-optimized mode - use locally built optimized base image
+if [ "$DEV_OPTIMIZED" = true ]; then
+    export BASE_IMAGE="bc-wine-base:local-optimized"
+    echo -e "${YELLOW}Dev optimized mode: Using locally built optimized base image (bc-wine-base:local-optimized)${NC}"
+
+    # Check if the local optimized image exists
+    if ! docker image inspect bc-wine-base:local-optimized &>/dev/null; then
+        echo -e "${RED}Warning: bc-wine-base:local-optimized image not found!${NC}"
+        echo -e "${YELLOW}Build it first with:${NC}"
+        echo "  cd ~/BCOnLinuxBase && ./build-local.sh --variant optimized"
         echo ""
         exit 1
     fi
@@ -131,8 +170,8 @@ else
     COMPOSE_FILE="compose.yml"
 fi
 
-# Pull the latest base image (unless in dev mode)
-if [ "$DEV_MODE" != true ]; then
+# Pull the latest base image (unless in dev or dev-optimized mode)
+if [ "$DEV_MODE" != true ] && [ "$DEV_OPTIMIZED" != true ]; then
     BASE_IMAGE_TO_PULL="${BASE_IMAGE:-stefanmaronbc/bc-wine-base:latest}"
     echo -e "${YELLOW}Pulling latest base image: ${BASE_IMAGE_TO_PULL}${NC}"
     docker pull "$BASE_IMAGE_TO_PULL"

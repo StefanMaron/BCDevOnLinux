@@ -30,6 +30,12 @@ services:
       - wine_data:/root/.wine
       # wine_cache removed - not needed with base image
       - ./secret.key:/home/secret.key:ro  # Mount RSA key directly
+    tmpfs:
+      - /root/.local/share/wineprefixes/bc1/drive_c/users/root/AppData/Local/Temp:size=512M,mode=1777
+      # PERFORMANCE: BC metadata cache stored in RAM (10-20x faster metadata access)
+      # Trade-off: Cache regenerates on every container restart (~2 min), but much faster during operation
+      # To disable: Comment this line (cache will persist on disk and survive restarts)
+      - /root/.local/share/wineprefixes/bc1/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/MicrosoftDynamicsNavServer$$BC:size=1G,mode=1777
     networks:
       - bc-network
     restart: unless-stopped

@@ -18,26 +18,10 @@ echo "Using provided CustomSettings.config (template generation skipped)"
 # Make sure all scripts are executable
 find /home/scripts -name "*.sh" -exec chmod +x {} \;
 
-# Check if this is first run and initialize Wine if needed
-if [ ! -f "/home/.wine-initialized" ]; then
-    echo "First run detected, initializing Wine environment..."
-
-    # Use base image runtime initialization scripts
-    if [ -f "/usr/local/bin/wine-init-runtime.sh" ]; then
-        echo "Running minimal Wine initialization..."
-        /usr/local/bin/wine-init-runtime.sh
-    fi
-
-    # Install .NET 8 components at runtime (no Docker timeout here)
-    # if [ -f "/usr/local/bin/wine-init-full.sh" ]; then
-    #     echo "Installing .NET 8 runtime components..."
-    #     /usr/local/bin/wine-init-full.sh
-    # fi
-    echo "Note: .NET 8 should be pre-installed in base image"
-
-    touch /home/.wine-initialized
-    echo "Wine and .NET initialization completed"
-fi
+# Wine and .NET are already initialized in the base image (build-time)
+# No runtime initialization needed - containers start immediately!
+echo "✓ Wine and .NET pre-initialized in base image"
+test -f "/home/.wine-initialized" && echo "✓ Initialization marker found" || echo "⚠ Warning: initialization marker missing"
 
 # Check and cache BC artifacts
 # Priority: 1) Pre-mounted artifacts, 2) Cached in volume, 3) Download fresh

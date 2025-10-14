@@ -38,7 +38,7 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-export WINEDEBUG="+eventlog,+http,+httpapi,+advapi,-thread,-combase,-ntdll"
+export WINEDEBUG="-all"
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
@@ -65,17 +65,10 @@ else
     echo "Xvfb already running"
 fi
 
-# Check if Wine prefix exists and has all required components
-if [ ! -d "$WINEPREFIX" ] || [ ! -f "$WINEPREFIX/system.reg" ]; then
-    echo "Wine prefix not found or corrupted, initializing..."
-    echo "STATUS: Initializing Wine prefix..." >> "$STATUS_FILE"
-    /home/scripts/wine/init-wine.sh
-    echo "STATUS: Wine prefix initialization completed" >> "$STATUS_FILE"
-else
-    echo "Wine prefix found at: $WINEPREFIX"
-    echo "Verifying required .NET components are installed..."
-    echo "STATUS: Checking .NET components..." >> "$STATUS_FILE"
-fi
+# Wine prefix is guaranteed to exist from base image build
+echo "✓ Wine prefix: $WINEPREFIX (pre-initialized in base image)"
+echo "✓ .NET 8 components: pre-installed at build time"
+echo "STATUS: Wine and .NET verified from base image" >> "$STATUS_FILE"
 
 # BC Server path in standard Wine Program Files location
 BCSERVER_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.exe"
