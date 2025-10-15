@@ -31,9 +31,10 @@ services:
       # wine_cache removed - not needed with base image
       - ./secret.key:/home/secret.key:ro  # Mount RSA key directly
     tmpfs:
+      # Wine Temp directory - used during BC startup for temporary operations
+      - /root/.local/share/wineprefixes/bc1/drive_c/users/root/AppData/Local/Temp:size=512M,mode=1777,exec
       # BC metadata cache in RAM - critical for fast cache generation (metadata + assemblies)
       - /root/.local/share/wineprefixes/bc1/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/MicrosoftDynamicsNavServer$$BC:size=1G,mode=1777,exec
-      # Note: Wine Temp removed to save RAM - low impact (rarely used)
     networks:
       - bc-network
     restart: unless-stopped
