@@ -52,11 +52,19 @@ services:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD:-P@ssw0rd123!}
       - MSSQL_PID=Express
+      - MSSQL_MEMORY_LIMIT_MB=2048  # Limit SQL memory for CI/CD runners (7GB total)
     ports:
       - "1433:1433"
     volumes:
       - sql_data:/var/opt/mssql
       - bc_artifacts:/bc_artifacts:ro
+    tmpfs:
+      # SQL tempdb in RAM for faster temporary operations
+      # tempdb handles: sorts, temp tables, transaction logs during operations
+      - /var/opt/mssql/data/tempdb:size=512M,exec
+      # SQL transaction log in RAM for faster write operations
+      # All database writes go through the log first - major I/O hotspot
+      - /var/opt/mssql/data/BC.ldf:size=128M,exec
     networks:
       - bc-network
     restart: unless-stopped
