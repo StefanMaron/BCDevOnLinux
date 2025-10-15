@@ -23,12 +23,9 @@ services:
       - "7049:7049"  # BC Development Services
       - "7086:7086"
     volumes:
-      - bc_data:/home/bcserver
       - bc_artifacts:/home/bcartifacts
       # Optional: Mount pre-downloaded artifacts from host (overrides BC_VERSION settings)
       # - ~/.bcartifacts.cache/sandbox/26.5.38752.40416:/home/bchost-cache:ro
-      - wine_data:/root/.wine
-      # wine_cache removed - not needed with base image
       - ./secret.key:/home/secret.key:ro  # Mount RSA key directly
     tmpfs:
       # Wine Temp directory - used during BC startup for temporary operations
@@ -73,13 +70,7 @@ services:
       start_period: 60s
 
 volumes:
-  sql_data:
-    driver: local
-  bc_data:
-    driver: local
   bc_artifacts:
-    driver: local
-  wine_data:
     driver: local
 
 networks:
