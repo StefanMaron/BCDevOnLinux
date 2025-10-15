@@ -91,20 +91,33 @@ Write-Host "  Type: $type" -ForegroundColor White
 
 try {
     $artifactUrl = Get-BCartifactUrl -version $version -country $country -type $type
-    Write-Host "  URL: $artifactUrl" -ForegroundColor White
+    Write-Host "  Application URL: $artifactUrl" -ForegroundColor White
 
-    Write-Host "Downloading artifacts (this may take several minutes)..." -ForegroundColor Yellow
-    $artifactPaths = Download-Artifacts $artifactUrl -includePlatform
+    # Construct platform URL from application URL
+    $appUri = [Uri]$artifactUrl
+    $platformUrl = "$($appUri.AbsolutePath.Substring(0,$appUri.AbsolutePath.LastIndexOf('/')))/platform".TrimStart('/')
+    if ($platformUrl -notlike 'https://*') {
+        $platformUrl = "https://$($appUri.Host.TrimEnd('/'))/$platformUrl$($appUri.Query)"
+    }
+    Write-Host "  Platform URL: $platformUrl" -ForegroundColor White
 
-    Write-Host "Copying artifacts to cache..." -ForegroundColor Yellow
+    Write-Host "Downloading artifacts directly (this may take several minutes)..." -ForegroundColor Yellow
 
-    # Copy platform first (base layer)
-    Write-Host "  Platform: $($artifactPaths[1]) → $DestinationPath" -ForegroundColor Cyan
-    Copy-Item -Path "$($artifactPaths[1])/*" -Destination $DestinationPath -Recurse -Force
+    # Download platform artifact (base layer) - using curl for maximum speed on Linux
+    Write-Host "  Downloading platform artifact..." -ForegroundColor Cyan
+    $platformZip = Join-Path ([System.IO.Path]::GetTempPath()) "platform-$([Guid]::NewGuid().ToString()).zip"
+    curl -L -o $platformZip "$platformUrl" --max-time 600 --progress-bar
+    Write-Host "  Extracting platform to $DestinationPath..." -ForegroundColor Cyan
+    7z x $platformZip -o"$DestinationPath" -y | Out-Null
+    Remove-Item $platformZip -Force
 
-    # Copy application (overlays on platform)
-    Write-Host "  Application: $($artifactPaths[0]) → $DestinationPath" -ForegroundColor Cyan
-    Copy-Item -Path "$($artifactPaths[0])/*" -Destination $DestinationPath -Recurse -Force
+    # Download application artifact (overlay)
+    Write-Host "  Downloading application artifact..." -ForegroundColor Cyan
+    $appZip = Join-Path ([System.IO.Path]::GetTempPath()) "app-$([Guid]::NewGuid().ToString()).zip"
+    curl -L -o $appZip "$artifactUrl" --max-time 600 --progress-bar
+    Write-Host "  Extracting application to $DestinationPath..." -ForegroundColor Cyan
+    7z x $appZip -o"$DestinationPath" -aoa | Out-Null
+    Remove-Item $appZip -Force
 
     # Flatten if ServiceTier is nested in a subdirectory
     $serviceTierPath = Get-ChildItem -Path $DestinationPath -Filter "ServiceTier" -Directory -Recurse -Depth 2 | Select-Object -First 1
