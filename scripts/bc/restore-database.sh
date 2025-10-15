@@ -85,11 +85,11 @@ echo "Log file: $LOG_LOGICAL_NAME"
 
 # Restore the database
 echo "Executing database restore..."
-# Data file goes to persistent disk, log file goes to tmpfs for performance
+# Both data and log files go to /var/opt/mssql/data (which is on tmpfs for performance)
 RESTORE_CMD="RESTORE DATABASE [$DATABASE_NAME]
 FROM DISK = N'$BACKUP_FILE_SQL'
 WITH MOVE N'$DATA_LOGICAL_NAME' TO N'/var/opt/mssql/data/${DATABASE_NAME}.mdf',
-MOVE N'$LOG_LOGICAL_NAME' TO N'/var/opt/mssql/log/${DATABASE_NAME}.ldf',
+MOVE N'$LOG_LOGICAL_NAME' TO N'/var/opt/mssql/data/${DATABASE_NAME}.ldf',
 REPLACE"
 
 if execute_sql "$RESTORE_CMD"; then
