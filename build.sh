@@ -173,8 +173,18 @@ fi
 # Pull the latest base image (unless in dev or dev-optimized mode)
 if [ "$DEV_MODE" != true ] && [ "$DEV_OPTIMIZED" != true ]; then
     BASE_IMAGE_TO_PULL="${BASE_IMAGE:-stefanmaronbc/bc-wine-base:latest}"
-    echo -e "${YELLOW}Pulling latest base image: ${BASE_IMAGE_TO_PULL}${NC}"
-    docker pull "$BASE_IMAGE_TO_PULL"
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}Step 1: Pulling base image separately${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${YELLOW}Image: ${BASE_IMAGE_TO_PULL}${NC}"
+    echo -e "${BLUE}This optimizes download speed and provides better progress feedback${NC}"
+    echo ""
+
+    # Pull with progress (legacy format for better visualization)
+    DOCKER_BUILDKIT=0 docker pull "$BASE_IMAGE_TO_PULL"
+
+    echo ""
+    echo -e "${GREEN}✓ Base image pull completed${NC}"
     echo ""
 fi
 
@@ -185,12 +195,16 @@ if [ "$NO_CACHE" = true ]; then
     BUILD_CMD="$BUILD_CMD --no-cache"
 fi
 
-echo -e "${YELLOW}Starting Docker build with base image...${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Step 2: Building BC container${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo -e "${BLUE}Build optimizations:${NC}"
 echo -e "${BLUE}  • Wine build: SKIPPED (pre-compiled in base)${NC}"
 echo -e "${BLUE}  • .NET Framework 4.8: SKIPPED (pre-installed)${NC}"
+echo -e "${BLUE}  • Base image: CACHED (pulled separately)${NC}"
 echo -e "${BLUE}  • Only installing: BC artifacts + .NET 8 runtime${NC}"
 echo -e "${YELLOW}Expected build time: ~5-10 minutes (vs 60-90 minutes without base)${NC}"
+echo ""
 
 # Execute build
 $BUILD_CMD

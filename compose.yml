@@ -48,6 +48,7 @@ services:
 
   sql:
     image: "mcr.microsoft.com/mssql/server:2022-latest"
+    user: "0:0"  # Run as root temporarily to create log directory, SQL will switch to mssql user
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD:-P@ssw0rd123!}
@@ -60,11 +61,9 @@ services:
       - bc_artifacts:/bc_artifacts:ro
     tmpfs:
       # SQL tempdb in RAM for faster temporary operations
-      # tempdb handles: sorts, temp tables, transaction logs during operations
       - /var/opt/mssql/data/tempdb:size=512M,exec
-      # SQL transaction log in RAM for faster write operations
-      # All database writes go through the log first - major I/O hotspot
-      - /var/opt/mssql/data/BC.ldf:size=128M,exec
+      # SQL transaction logs in RAM - major I/O hotspot
+      - /var/opt/mssql/log:size=256M,uid=10001,gid=0,mode=0770,exec
     networks:
       - bc-network
     restart: unless-stopped
