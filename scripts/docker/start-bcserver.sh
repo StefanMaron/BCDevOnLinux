@@ -38,7 +38,8 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-export WINEDEBUG="-all"
+#export WINEDEBUG="-all"
+export WINEDEBUG="+http,+winhttp,+httpapi,+advapi,-thread,-combase,-ntdll"  # debugging
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
