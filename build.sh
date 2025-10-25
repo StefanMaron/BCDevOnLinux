@@ -30,6 +30,8 @@ echo ""
 BUILD_ONLY=false
 NO_CACHE=false
 NO_SQL=false
+DEV_MODE=false
+DEV_OPTIMIZED=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -45,24 +47,65 @@ while [[ $# -gt 0 ]]; do
             NO_SQL=true
             shift
             ;;
+        -d|--dev)
+            DEV_MODE=true
+            shift
+            ;;
+        --dev-optimized)
+            DEV_OPTIMIZED=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Default behavior: Builds image AND starts containers"
             echo ""
             echo "Options:"
             echo "  --build-only      Only build the image, don't start containers"
             echo "  --no-cache        Build without using Docker cache"
             echo "  --no-sql          Use external SQL server (no SQL container)"
+            echo "  -d, --dev         Use locally built base image (bc-wine-base:local)"
+            echo "  --dev-optimized   Use locally built optimized base image (bc-wine-base:local-optimized)"
             echo "  --help            Show this help message"
+            echo ""
+            echo "Options can be combined, e.g.: $0 --no-cache --build-only"
             echo ""
             echo "Build time comparison:"
             echo "  With base image:    ~5-10 minutes (vs 60-90 minutes before)"
             echo "  Startup time:       ~3-5 minutes (vs 15-20 minutes before)"
             echo ""
-            echo "External SQL usage:"
-            echo "  When using --no-sql, set these environment variables:"
-            echo "    SQL_SERVER=<your-sql-server-hostname>"
-            echo "    SQL_SERVER_PORT=<port> (default: 1433)"
-            echo "    SA_PASSWORD=<sql-password>"
+            echo "Compose files (auto-selected):"
+            echo "  compose.yml           Default with local SQL container"
+            echo "  compose-no-sql.yml    With --no-sql flag"
+            echo ""
+            echo "Environment variables for external SQL (--no-sql):"
+            echo "  SQL_SERVER=<hostname>        Required: SQL server hostname/IP"
+            echo "  SQL_SERVER_PORT=<port>       Optional: SQL port (default: 1433)"
+            echo "  SA_PASSWORD=<password>       Required: SQL SA password"
+            echo ""
+            echo "Development workflow (testing base image changes):"
+            echo "  Standard variant:"
+            echo "    1. Build base image:       cd ~/BCOnLinuxBase && ./build-local.sh"
+            echo "    2. Test in BCDevOnLinux:   cd ~/BCDevOnLinux-e036ace && ./build.sh --dev"
+            echo "    3. Iterate and rebuild:    ./build.sh --dev --no-cache"
+            echo "  Optimized variant:"
+            echo "    1. Build base image:       cd ~/BCOnLinuxBase && ./build-local.sh --variant optimized"
+            echo "    2. Test in BCDevOnLinux:   cd ~/BCDevOnLinux-e036ace && ./build.sh --dev-optimized"
+            echo "    3. Iterate and rebuild:    ./build.sh --dev-optimized --no-cache"
+            echo ""
+            echo "Base image customization:"
+            echo "  BASE_IMAGE=<image>           Override the base Docker image"
+            echo "    Default:                   stefanmaronbc/bc-wine-base:latest"
+            echo "  --dev flag sets:             bc-wine-base:local"
+            echo "  --dev-optimized flag sets:   bc-wine-base:local-optimized"
+            echo ""
+            echo "Examples:"
+            echo "  Development mode:            ./build.sh --dev"
+            echo "  Dev optimized mode:          ./build.sh --dev-optimized"
+            echo "  Dev with fresh build:        ./build.sh --dev --no-cache"
+            echo "  Dev optimized fresh build:   ./build.sh --dev-optimized --no-cache"
+            echo "  Dev build only:              ./build.sh --dev --build-only"
+            echo "  Custom base image:           BASE_IMAGE=ubuntu:24.04 ./build.sh"
             exit 0
             ;;
         *)
@@ -71,6 +114,47 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Check for mutually exclusive flags
+if [ "$DEV_MODE" = true ] && [ "$DEV_OPTIMIZED" = true ]; then
+    echo -e "${RED}Error: --dev and --dev-optimized cannot be used together${NC}"
+    echo "Choose one:"
+    echo "  --dev           for bc-wine-base:local"
+    echo "  --dev-optimized for bc-wine-base:local-optimized"
+    exit 1
+fi
+
+# Handle dev mode - use locally built base image
+if [ "$DEV_MODE" = true ]; then
+    export BASE_IMAGE="bc-wine-base:local"
+    echo -e "${YELLOW}Dev mode: Using locally built base image (bc-wine-base:local)${NC}"
+
+    # Check if the local image exists
+    if ! docker image inspect bc-wine-base:local &>/dev/null; then
+        echo -e "${RED}Warning: bc-wine-base:local image not found!${NC}"
+        echo -e "${YELLOW}Build it first with:${NC}"
+        echo "  cd ~/BCOnLinuxBase && ./build-local.sh"
+        echo ""
+        exit 1
+    fi
+    echo ""
+fi
+
+# Handle dev-optimized mode - use locally built optimized base image
+if [ "$DEV_OPTIMIZED" = true ]; then
+    export BASE_IMAGE="bc-wine-base:local-optimized"
+    echo -e "${YELLOW}Dev optimized mode: Using locally built optimized base image (bc-wine-base:local-optimized)${NC}"
+
+    # Check if the local optimized image exists
+    if ! docker image inspect bc-wine-base:local-optimized &>/dev/null; then
+        echo -e "${RED}Warning: bc-wine-base:local-optimized image not found!${NC}"
+        echo -e "${YELLOW}Build it first with:${NC}"
+        echo "  cd ~/BCOnLinuxBase && ./build-local.sh --variant optimized"
+        echo ""
+        exit 1
+    fi
+    echo ""
+fi
 
 # Determine which compose file to use
 if [ "$NO_SQL" = true ]; then
@@ -86,6 +170,24 @@ else
     COMPOSE_FILE="compose.yml"
 fi
 
+# Pull the latest base image (unless in dev or dev-optimized mode)
+if [ "$DEV_MODE" != true ] && [ "$DEV_OPTIMIZED" != true ]; then
+    BASE_IMAGE_TO_PULL="${BASE_IMAGE:-stefanmaronbc/bc-wine-base:latest}"
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}Step 1: Pulling base image separately${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${YELLOW}Image: ${BASE_IMAGE_TO_PULL}${NC}"
+    echo -e "${BLUE}This optimizes download speed and provides better progress feedback${NC}"
+    echo ""
+
+    # Pull with progress (legacy format for better visualization)
+    DOCKER_BUILDKIT=0 docker pull "$BASE_IMAGE_TO_PULL"
+
+    echo ""
+    echo -e "${GREEN}✓ Base image pull completed${NC}"
+    echo ""
+fi
+
 # Build command
 BUILD_CMD="docker compose -f $COMPOSE_FILE build"
 
@@ -93,12 +195,16 @@ if [ "$NO_CACHE" = true ]; then
     BUILD_CMD="$BUILD_CMD --no-cache"
 fi
 
-echo -e "${YELLOW}Starting Docker build with base image...${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Step 2: Building BC container${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo -e "${BLUE}Build optimizations:${NC}"
 echo -e "${BLUE}  • Wine build: SKIPPED (pre-compiled in base)${NC}"
 echo -e "${BLUE}  • .NET Framework 4.8: SKIPPED (pre-installed)${NC}"
+echo -e "${BLUE}  • Base image: CACHED (pulled separately)${NC}"
 echo -e "${BLUE}  • Only installing: BC artifacts + .NET 8 runtime${NC}"
 echo -e "${YELLOW}Expected build time: ~5-10 minutes (vs 60-90 minutes without base)${NC}"
+echo ""
 
 # Execute build
 $BUILD_CMD

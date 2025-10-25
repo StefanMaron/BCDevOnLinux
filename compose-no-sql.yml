@@ -11,10 +11,11 @@ services:
       - SQL_SERVER_PORT=${SQL_SERVER_PORT:-1433}
       - BC_AUTOSTART=false
     ports:
-      - "7046:7046"  # BC OData
-      - "7047:7047"  # BC SOAP
-      - "7048:7048"  # BC Management
-      - "7049:7049"  # BC Development
+      - "7045:7045"  # BC Management Services
+      - "7046:7046"  # BC Client Services
+      - "7047:7047"  # BC SOAP Services
+      - "7048:7048"  # BC OData Services
+      - "7049:7049"  # BC Development Services
     volumes:
       - bc_data:/home/bcserver
       - bc_artifacts:/home/bcartifacts

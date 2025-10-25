@@ -22,7 +22,6 @@ COPY tests/ /home/tests/
 COPY config/CustomSettings.config /home/
 RUN mkdir -p /home/config
 COPY config/secret.key /home/config/
-RUN mkdir -p /home/bcserver && cp /home/CustomSettings.config /home/bcserver/
 
 # Copy BC console runner scripts to /home for easy access
 COPY scripts/bc/run-bc-console.sh /home/run-bc-console.sh
@@ -50,7 +49,7 @@ RUN echo "" >> /root/.bashrc && \
     echo "fi" >> /root/.bashrc
 
 # Expose BC ports
-EXPOSE 7046 7047 7048 7049
+EXPOSE 7045 7046 7047 7048 7049
 
 # Set entrypoint
 ENTRYPOINT ["/home/scripts/docker/entrypoint.sh"]

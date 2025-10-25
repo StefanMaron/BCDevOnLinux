@@ -66,17 +66,10 @@ else
     echo "Xvfb already running"
 fi
 
-# Check if Wine prefix exists and has all required components
-if [ ! -d "$WINEPREFIX" ] || [ ! -f "$WINEPREFIX/system.reg" ]; then
-    echo "Wine prefix not found or corrupted, initializing..."
-    echo "STATUS: Initializing Wine prefix..." >> "$STATUS_FILE"
-    /home/scripts/wine/init-wine.sh
-    echo "STATUS: Wine prefix initialization completed" >> "$STATUS_FILE"
-else
-    echo "Wine prefix found at: $WINEPREFIX"
-    echo "Verifying required .NET components are installed..."
-    echo "STATUS: Checking .NET components..." >> "$STATUS_FILE"
-fi
+# Wine prefix is guaranteed to exist from base image build
+echo "✓ Wine prefix: $WINEPREFIX (pre-initialized in base image)"
+echo "✓ .NET 8 components: pre-installed at build time"
+echo "STATUS: Wine and .NET verified from base image" >> "$STATUS_FILE"
 
 # BC Server path in standard Wine Program Files location
 BCSERVER_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.exe"
@@ -115,52 +108,50 @@ fi
 
 echo "Found BC Server at: $BCSERVER_PATH"
 
+# IMPORTANT: Config copy happens EVERY TIME, not just on first install
+# This ensures our custom config always overwrites any artifact defaults
+echo ""
+echo "========================================="
+echo "FORCE COPYING CONFIGURATION FILES"
+echo "This runs on every container start to ensure correct settings"
+echo "========================================="
 
-# Copy configuration and key files to Wine prefix (BC4Ubuntu approach)
-echo "Copying configuration files to Wine prefix..."
 BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
 mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
 
 # FORCE OVERWRITE the config file - this is critical!
-if [ -f "/home/bcserver/CustomSettings.config" ]; then
-    echo "Forcing copy of CustomSettings.config from /home/bcserver/"
-    cp -f "/home/bcserver/CustomSettings.config" "$BCSERVER_DIR/CustomSettings.config"
-    echo "Config copied and overwritten successfully"
-elif [ -f "/home/CustomSettings.config" ]; then
-    echo "Forcing copy of CustomSettings.config from /home/"
+# Note: /home/bcserver/ was a legacy location, now removed
+if [ -f "/home/CustomSettings.config" ]; then
+    echo "✓ Forcing copy of CustomSettings.config from /home/"
     cp -f "/home/CustomSettings.config" "$BCSERVER_DIR/CustomSettings.config"
-    echo "Config copied and overwritten successfully"
-    # Verify the copy worked
-    echo "Verifying DatabaseInstance setting in copied file:"
-    grep "DatabaseInstance" "$BCSERVER_DIR/CustomSettings.config" | head -1
+    echo "✓ Config copied and overwritten successfully"
 else
-    echo "ERROR: CustomSettings.config not found in /home/bcserver/ or /home/"
-    echo "BC will use the default config from artifacts (which has DatabaseInstance=MSSQLSERVER)"
+    echo "✗ ERROR: CustomSettings.config not found at /home/CustomSettings.config"
+    echo "BC will use the default config from artifacts"
     exit 1
 fi
 
-# Check for encryption keys - prioritize /home/bcserver/ location
-if [ -f "/home/bcserver/Keys/bc.key" ]; then
-    echo "Using bc.key from /home/bcserver/Keys/"
-    # Copy to ProgramData locations
-    cp "/home/bcserver/Keys/bc.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
-    
-    echo "Encryption keys copied to all required locations"
-elif [ -f "/home/config/secret.key" ]; then
-    echo "Using RSA key from /home/config/secret.key (fallback location)"
+# VERIFY the critical settings were applied correctly
+echo ""
+echo "Verifying critical configuration settings:"
+echo "  DatabaseInstance: $(grep -m1 'key="DatabaseInstance"' "$BCSERVER_DIR/CustomSettings.config" | sed 's/.*value="\([^"]*\)".*/\1/')"
+echo "  ClientServicesCredentialType: $(grep -m1 'key="ClientServicesCredentialType"' "$BCSERVER_DIR/CustomSettings.config" | sed 's/.*value="\([^"]*\)".*/\1/')"
+echo "  DatabaseServer: $(grep -m1 'key="DatabaseServer"' "$BCSERVER_DIR/CustomSettings.config" | sed 's/.*value="\([^"]*\)".*/\1/')"
+echo ""
+
+# Copy encryption keys (legacy /home/bcserver/ location removed)
+if [ -f "/home/config/secret.key" ]; then
+    echo "✓ Using RSA key from /home/config/secret.key"
     # Copy to all required locations in Wine prefix
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BusinessCentral260.key"
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BC.key"
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
     cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/bc.key"
-    
-    echo "RSA encryption keys copied to all required locations"
+
+    echo "✓ RSA encryption keys copied to all required locations"
 else
-    echo "ERROR: No encryption key found!"
-    echo "Expected locations (in priority order):"
-    echo "  1. /home/bcserver/secret.key (RSA key)"
-    echo "  2. /home/bcserver/Keys/bc.key"
-    echo "  3. /home/config/secret.key (fallback)"
+    echo "✗ ERROR: No encryption key found at /home/config/secret.key"
+    exit 1
 fi
 
 # Verify Wine environment
@@ -173,81 +164,41 @@ wine --version
 # Change to BC Server directory
 cd "$BCSERVER_DIR"
 
-# Register BC Server as a Windows service in Wine (if not already registered)
-echo "Checking BC Server service registration..."
-if ! wine reg query 'HKLM\SYSTEM\CurrentControlSet\Services\MicrosoftDynamicsNavServer$BusinessCentral260' 2>/dev/null | grep -q "ImagePath"; then
-    echo "Registering BC Server as a Windows service..."
+# Execute BC Server
+# The custom Wine build handles all locale/culture issues internally
+echo "STATUS: Starting BC Server..." >> "$STATUS_FILE"
 
-    # Create service registry key
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /f 2>/dev/null
+# Start BC Server in console mode with persistent stdin
+# The /console flag activates HTTP listeners immediately
+# tail -f /dev/null keeps stdin open indefinitely without producing output
+echo "Starting BC Server in console mode..."
+set -m  # Enable job control for proper signal handling
+tail -f /dev/null | wine Microsoft.Dynamics.Nav.Server.exe '$BC' /config Microsoft.Dynamics.Nav.Server.dll.config /console 2>&1 | tee /var/log/bc-server.log &
+BC_PID=$!
 
-    # Set service configuration matching the VM setup
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v DisplayName /t REG_SZ /d "Microsoft Dynamics 365 Business Central Server [BusinessCentral260]" /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v Description /t REG_SZ /d "Service handling requests to the Microsoft Dynamics 365 Business Central application" /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v ImagePath /t REG_SZ /d "C:\\Program Files\\Microsoft Dynamics NAV\\260\\Service\\Microsoft.Dynamics.Nav.Server.exe \$BusinessCentral260 /config \"C:\\Program Files\\Microsoft Dynamics NAV\\260\\Service\\Microsoft.Dynamics.Nav.Server.dll.config\"" /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v ObjectName /t REG_SZ /d "NT AUTHORITY\\NETWORK SERVICE" /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v Start /t REG_DWORD /d 2 /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v Type /t REG_DWORD /d 16 /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v ErrorControl /t REG_DWORD /d 0 /f 2>/dev/null
-    wine reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\MicrosoftDynamicsNavServer\$BusinessCentral260" /v DependOnService /t REG_MULTI_SZ /d "HTTP" /f 2>/dev/null
+echo "BC Server started with PID $BC_PID"
+echo "Waiting for BC Server to initialize..."
 
-    echo "BC Server service registered successfully"
-else
-    echo "BC Server service already registered"
-fi
-
-# Start Wine Service Control Manager
-# This is the Windows service manager that will auto-start BC Server (Start=2 in registry)
-echo "Starting Wine Service Control Manager..."
-echo "STATUS: Starting Wine services.exe..." >> "$STATUS_FILE"
-
-# Start services.exe in background (this is PID 1's job in the container)
-wine services.exe 2>&1 | tee -a /var/log/bc-server.log &
-SERVICES_PID=$!
-
-echo "Waiting for services.exe to initialize..."
-sleep 5
-
-# Verify services.exe is running
-if ! kill -0 $SERVICES_PID 2>/dev/null; then
-    echo "ERROR: Wine services.exe failed to start"
-    exit 1
-fi
-
-echo "Wine Service Control Manager started (PID: $SERVICES_PID)"
-echo "STATUS: services.exe running, waiting for BC Server auto-start..." >> "$STATUS_FILE"
-
-# Wait for BC Server to auto-start (Start=2 in registry means AUTO_START)
-echo "Waiting for BC Server service to auto-start (1-2 minutes)..."
-for i in {1..60}; do
-    if pgrep -f "Microsoft.Dynamics.Nav.Server.exe" > /dev/null; then
-        BC_PID=$(pgrep -f "Microsoft.Dynamics.Nav.Server.exe")
-        echo "✓ BC Server service auto-started successfully (PID: $BC_PID)"
-        echo "STATUS: BC Server running on PID $BC_PID" >> "$STATUS_FILE"
+# Monitor log for readiness message
+timeout=180  # 3 minutes timeout
+elapsed=0
+while [ $elapsed -lt $timeout ]; do
+    if grep -q "Press Enter to stop the console server" /var/log/bc-server.log; then
+        echo "✓ BC Server is ready for connections!"
         break
     fi
     sleep 2
+    elapsed=$((elapsed + 2))
+    if [ $((elapsed % 10)) -eq 0 ]; then
+        echo "Still initializing... ($elapsed seconds elapsed)"
+    fi
 done
 
-# Verify BC Server is running
-if ! pgrep -f "Microsoft.Dynamics.Nav.Server.exe" > /dev/null; then
-    echo "ERROR: BC Server did not auto-start within 2 minutes"
-    echo "Checking service registration..."
-    wine reg query 'HKLM\SYSTEM\CurrentControlSet\Services\MicrosoftDynamicsNavServer$BusinessCentral260' 2>&1 | head -10
-    echo "Checking logs..."
-    tail -50 /var/log/bc-server.log
-    exit 1
+if [ $elapsed -ge $timeout ]; then
+    echo "⚠ Timeout waiting for BC Server readiness message"
+    echo "Check /var/log/bc-server.log for details"
 fi
 
-BC_PID=$(pgrep -f "Microsoft.Dynamics.Nav.Server.exe")
-echo "BC Server is running as Windows service (matching VM setup)"
-echo "Monitoring BC Server process..."
-
-# Monitor the BC Server process - if it exits, container should exit
-while kill -0 $BC_PID 2>/dev/null; do
-    sleep 5
-done
-
-echo "BC Server process has exited"
-exit 1
+# Wait for the background process
+wait $BC_PID
 

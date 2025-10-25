@@ -5,6 +5,7 @@ services:
       dockerfile: dockerfile
       args:
         BUILDKIT_PROGRESS: plain  # Show full build output
+        BASE_IMAGE: ${BASE_IMAGE:-stefanmaronbc/bc-wine-base:latest}
     depends_on:
       sql:
         condition: service_healthy
@@ -15,23 +16,27 @@ services:
       - BC_AUTOSTART=true
       - WINEDEBUG=-all
     ports:
-      - "7046:7046"  # BC OData
-      - "7047:7047"  # BC SOAP
-      - "7048:7048"  # BC Management
-      - "7049:7049"  # BC Development
+      - "7045:7045"  # BC Management Services
+      - "7046:7046"  # BC Client Services
+      - "7047:7047"  # BC SOAP Services
+      - "7048:7048"  # BC OData Services
+      - "7049:7049"  # BC Development Services
+      - "7086:7086"
     volumes:
-      - bc_data:/home/bcserver
       - bc_artifacts:/home/bcartifacts
       # Optional: Mount pre-downloaded artifacts from host (overrides BC_VERSION settings)
       # - ~/.bcartifacts.cache/sandbox/26.5.38752.40416:/home/bchost-cache:ro
-      - wine_data:/root/.wine
-      # wine_cache removed - not needed with base image
       - ./secret.key:/home/secret.key:ro  # Mount RSA key directly
+    tmpfs:
+      # Wine Temp directory - used during BC startup for temporary operations
+      - /root/.local/share/wineprefixes/bc1/drive_c/users/root/AppData/Local/Temp:size=512M,mode=1777,exec
+      # BC metadata cache in RAM - critical for fast cache generation (metadata + assemblies)
+      - /root/.local/share/wineprefixes/bc1/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/MicrosoftDynamicsNavServer$$BC:size=1G,mode=1777,exec
     networks:
       - bc-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'Microsoft.Dynamics.Nav.Server.exe' || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f 'Microsoft.Dynamics.Nav.Server.exe' && netstat -tln | grep -q ':7048' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -43,11 +48,17 @@ services:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD:-P@ssw0rd123!}
       - MSSQL_PID=Express
+      - MSSQL_MEMORY_LIMIT_MB=2048  # Limit SQL memory for CI/CD runners (7GB total)
     ports:
       - "1433:1433"
     volumes:
-      - sql_data:/var/opt/mssql
       - bc_artifacts:/bc_artifacts:ro
+    tmpfs:
+      # AGGRESSIVE: Entire SQL data directory in RAM for maximum performance
+      # This includes BC.mdf (942MB) with app BLOBs - THE major bottleneck for app loading
+      # Also includes BC.ldf (log) and tempdb - all database I/O now in RAM
+      # Database is ephemeral in CI/CD anyway, perfect for tmpfs
+      - /var/opt/mssql/data:size=2G,uid=10001,gid=0,mode=0770,exec
     networks:
       - bc-network
     restart: unless-stopped
@@ -59,13 +70,7 @@ services:
       start_period: 60s
 
 volumes:
-  sql_data:
-    driver: local
-  bc_data:
-    driver: local
   bc_artifacts:
-    driver: local
-  wine_data:
     driver: local
 
 networks:
