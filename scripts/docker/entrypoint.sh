@@ -4,6 +4,23 @@ set -e
 
 echo "Starting Business Central Container using BC4Ubuntu approach..."
 
+# Debug: Output environment variables for troubleshooting
+echo ""
+echo "=== Environment Variables (for troubleshooting) ==="
+echo "  SA_PASSWORD: $(if [ -n "$SA_PASSWORD" ]; then echo '***set***'; else echo '(not set)'; fi)"
+echo "  SQL_SERVER: ${SQL_SERVER:-(not set)}"
+echo "  SQL_SERVER_PORT: ${SQL_SERVER_PORT:-(not set)}"
+echo "  BC_AUTOSTART: ${BC_AUTOSTART:-(not set)}"
+echo "  BC_ARTIFACT_URL: ${BC_ARTIFACT_URL:-(not set)}"
+echo "  BC_VERSION: ${BC_VERSION:-(not set)}"
+echo "  BC_COUNTRY: ${BC_COUNTRY:-(not set)}"
+echo "  BC_TYPE: ${BC_TYPE:-(not set)}"
+echo "  ADMIN_PASSWORD: $(if [ -n "$ADMIN_PASSWORD" ]; then echo '***set***'; else echo '(not set)'; fi)"
+echo "  DATABASE_NAME: ${DATABASE_NAME:-(not set)}"
+echo "  WINEDEBUG: ${WINEDEBUG:-(not set)}"
+echo "=================================================="
+echo ""
+
 # Source Wine environment (base image has Wine paths already configured)
 if [ -f /home/scripts/wine/wine-env.sh ]; then
     source /home/scripts/wine/wine-env.sh
