@@ -3,10 +3,10 @@
 # Priority: 1) Pre-mounted artifacts, 2) Cached artifacts, 3) Download fresh
 
 param(
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$DestinationPath = "/home/bcartifacts",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$PreDownloadedPath = "/home/bchost-cache"
 )
 
@@ -63,7 +63,8 @@ if (Test-Path $PreDownloadedPath) {
         Get-ChildItem -Path $DestinationPath | ForEach-Object {
             if ($_.PSIsContainer) {
                 Write-Host "  📁 $($_.Name)" -ForegroundColor Yellow
-            } else {
+            }
+            else {
                 Write-Host "  📄 $($_.Name)" -ForegroundColor White
             }
         }
@@ -76,21 +77,30 @@ Write-Host "No cached artifacts found, downloading..." -ForegroundColor Yellow
 # Get artifact URL based on environment variables
 Import-Module BcContainerHelper
 
-$version = $env:BC_VERSION
-$country = $env:BC_COUNTRY
-$type = $env:BC_TYPE
+$artifactUrl = $env:BC_ARTIFACT_URL
 
-if (-not $version) { $version = "26" }
-if (-not $country) { $country = "w1" }
-if (-not $type) { $type = "Sandbox" }
+if (-not $artifactUrl) {
+    $version = $env:BC_VERSION
+    $country = $env:BC_COUNTRY
+    $type = $env:BC_TYPE
+    if (-not $version) { $version = "26" }
+    if (-not $country) { $country = "w1" }
+    if (-not $type) { $type = "Sandbox" }
 
-Write-Host "Resolving artifact URL for:" -ForegroundColor Cyan
-Write-Host "  Version: $version" -ForegroundColor White
-Write-Host "  Country: $country" -ForegroundColor White
-Write-Host "  Type: $type" -ForegroundColor White
+    Write-Host "Resolving artifact URL for:" -ForegroundColor Cyan
+    Write-Host "  Version: $version" -ForegroundColor White
+    Write-Host "  Country: $country" -ForegroundColor White
+    Write-Host "  Type: $type" -ForegroundColor White
+    try {
 
+        $artifactUrl = Get-BCartifactUrl -version $version -country $country -type $type
+    }
+    catch {
+        Write-Error "Failed to resolve BC artifact URL: $_"
+        exit 1
+    }
+}
 try {
-    $artifactUrl = Get-BCartifactUrl -version $version -country $country -type $type
     Write-Host "  Application URL: $artifactUrl" -ForegroundColor White
 
     # Construct platform URL from application URL
@@ -135,7 +145,8 @@ try {
     Write-Host "✓ Artifacts cached successfully" -ForegroundColor Green
     Write-Host "  Location: $DestinationPath" -ForegroundColor Cyan
 
-} catch {
+}
+catch {
     Write-Error "Failed to download BC artifacts: $_"
     exit 1
 }
