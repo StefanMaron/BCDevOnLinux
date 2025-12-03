@@ -10,13 +10,17 @@ export WINEPREFIX="$HOME/.local/share/wineprefixes/bc1"
 export WINEARCH=win64
 export DISPLAY=":0"
 
+# Dynamically detect BC version
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
+echo "Detected BC version: $BC_VERSION"
+
 # Wine debug settings - adjust as needed
 # export WINEDEBUG="-all"  # Minimal output
 export WINEDEBUG="+http,+winhttp,+wininet,+httpapi,+advapi,-thread,-combase,-ntdll"  # HTTP debugging
 # export WINEDEBUG="+httpapi"  # Just HTTP API debugging
 
 # Ensure we're in the BC Service directory
-cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service" || {
+cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service" || {
     echo "Error: BC Service directory not found!"
     exit 1
 }

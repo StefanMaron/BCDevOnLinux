@@ -3,12 +3,16 @@
 # Priority: 1) Pre-mounted artifacts, 2) Cached artifacts, 3) Download fresh
 
 param(
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$DestinationPath = "/home/bcartifacts",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$PreDownloadedPath = "/home/bchost-cache"
 )
+
+# Check if verbose logging is enabled
+$verboseLogging = $env:VERBOSE_LOGGING -eq "true" -or $env:VERBOSE_LOGGING -eq "1"
+$curlProgressFlag = if ($verboseLogging) { "--progress-bar" } else { "--silent --show-error" }
 
 Write-Host "Checking BC artifact cache..." -ForegroundColor Cyan
 
@@ -63,7 +67,8 @@ if (Test-Path $PreDownloadedPath) {
         Get-ChildItem -Path $DestinationPath | ForEach-Object {
             if ($_.PSIsContainer) {
                 Write-Host "  📁 $($_.Name)" -ForegroundColor Yellow
-            } else {
+            }
+            else {
                 Write-Host "  📄 $($_.Name)" -ForegroundColor White
             }
         }
@@ -74,23 +79,32 @@ if (Test-Path $PreDownloadedPath) {
 Write-Host "No cached artifacts found, downloading..." -ForegroundColor Yellow
 
 # Get artifact URL based on environment variables
-Import-Module BcContainerHelper
+Import-Module BcContainerHelper -DisableNameChecking
 
-$version = $env:BC_VERSION
-$country = $env:BC_COUNTRY
-$type = $env:BC_TYPE
+$artifactUrl = $env:BC_ARTIFACT_URL
 
-if (-not $version) { $version = "26" }
-if (-not $country) { $country = "w1" }
-if (-not $type) { $type = "Sandbox" }
+if (-not $artifactUrl) {
+    $version = $env:BC_VERSION
+    $country = $env:BC_COUNTRY
+    $type = $env:BC_TYPE
+    if (-not $version) { $version = "26" }
+    if (-not $country) { $country = "w1" }
+    if (-not $type) { $type = "Sandbox" }
 
-Write-Host "Resolving artifact URL for:" -ForegroundColor Cyan
-Write-Host "  Version: $version" -ForegroundColor White
-Write-Host "  Country: $country" -ForegroundColor White
-Write-Host "  Type: $type" -ForegroundColor White
+    Write-Host "Resolving artifact URL for:" -ForegroundColor Cyan
+    Write-Host "  Version: $version" -ForegroundColor White
+    Write-Host "  Country: $country" -ForegroundColor White
+    Write-Host "  Type: $type" -ForegroundColor White
+    try {
 
+        $artifactUrl = Get-BCartifactUrl -version $version -country $country -type $type
+    }
+    catch {
+        Write-Error "Failed to resolve BC artifact URL: $_"
+        exit 1
+    }
+}
 try {
-    $artifactUrl = Get-BCartifactUrl -version $version -country $country -type $type
     Write-Host "  Application URL: $artifactUrl" -ForegroundColor White
 
     # Construct platform URL from application URL
@@ -106,7 +120,7 @@ try {
     # Download platform artifact (base layer) - using curl for maximum speed on Linux
     Write-Host "  Downloading platform artifact..." -ForegroundColor Cyan
     $platformZip = Join-Path ([System.IO.Path]::GetTempPath()) "platform-$([Guid]::NewGuid().ToString()).zip"
-    curl -L -o $platformZip "$platformUrl" --max-time 600 --progress-bar
+    Invoke-Expression "curl -L -o `$platformZip `"$platformUrl`" --max-time 600 $curlProgressFlag"
     Write-Host "  Extracting platform to $DestinationPath..." -ForegroundColor Cyan
     7z x $platformZip -o"$DestinationPath" -y | Out-Null
     Remove-Item $platformZip -Force
@@ -114,7 +128,7 @@ try {
     # Download application artifact (overlay)
     Write-Host "  Downloading application artifact..." -ForegroundColor Cyan
     $appZip = Join-Path ([System.IO.Path]::GetTempPath()) "app-$([Guid]::NewGuid().ToString()).zip"
-    curl -L -o $appZip "$artifactUrl" --max-time 600 --progress-bar
+    Invoke-Expression "curl -L -o `$appZip `"$artifactUrl`" --max-time 600 $curlProgressFlag"
     Write-Host "  Extracting application to $DestinationPath..." -ForegroundColor Cyan
     7z x $appZip -o"$DestinationPath" -aoa | Out-Null
     Remove-Item $appZip -Force
@@ -135,7 +149,8 @@ try {
     Write-Host "✓ Artifacts cached successfully" -ForegroundColor Green
     Write-Host "  Location: $DestinationPath" -ForegroundColor Cyan
 
-} catch {
+}
+catch {
     Write-Error "Failed to download BC artifacts: $_"
     exit 1
 }

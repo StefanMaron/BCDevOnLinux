@@ -4,8 +4,27 @@ set -e
 echo "Installing BC Server by copying files (MSI alternative)..."
 
 export WINEPREFIX="$HOME/.local/share/wineprefixes/bc1"
-WINE_BC_DIR="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service"
-BC_ARTIFACTS="/home/bcartifacts/ServiceTier/program files/Microsoft Dynamics NAV/260/Service"
+
+# Dynamically detect BC version from artifacts
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh)
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to detect BC version"
+    exit 1
+fi
+
+echo "Detected BC version: $BC_VERSION"
+
+# Get BC artifact program files directory (handles both "program files" and "PFiles64" naming)
+BC_PROGRAM_FILES_DIR=$(/home/scripts/bc/get-artifact-program-files-dir.sh)
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to locate BC artifact program files directory"
+    exit 1
+fi
+
+BC_ARTIFACTS="$BC_PROGRAM_FILES_DIR/Microsoft Dynamics NAV/$BC_VERSION/Service"
+echo "Using BC artifacts from: $BC_ARTIFACTS"
+
+WINE_BC_DIR="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service"
 
 # Check if already installed with all required files
 if [ -f "$WINE_BC_DIR/Microsoft.Dynamics.Nav.Server.exe" ] && \
@@ -66,12 +85,12 @@ if [ -f "/home/CustomSettings.config" ]; then
 fi
 
 # Install encryption keys
-KEY_DIR="$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
+KEY_DIR="$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys"
 mkdir -p "$KEY_DIR"
 if [ -f "/home/config/secret.key" ]; then
     cp "/home/config/secret.key" "$KEY_DIR/bc.key"
     cp "/home/config/secret.key" "$KEY_DIR/BC.key"
-    cp "/home/config/secret.key" "$KEY_DIR/BusinessCentral260.key"
+    cp "/home/config/secret.key" "$KEY_DIR/BusinessCentral${BC_VERSION}.key"
     cp "/home/config/secret.key" "$KEY_DIR/DynamicsNAV90.key"
     echo "Encryption keys installed"
 fi

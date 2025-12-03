@@ -3,12 +3,15 @@
 
 set -e
 
+# Dynamically detect BC version, allow override as parameter
+BC_VERSION_DETECTED=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
 KEY_SOURCE="$1"
-BC_VERSION="${2:-260}"  # Default to BC 260
+BC_VERSION="${2:-$BC_VERSION_DETECTED}"  # Use detected version as default
 
 if [ -z "$KEY_SOURCE" ]; then
     echo "Usage: $0 <path-to-existing-key-file> [bc-version]"
-    echo "Example: $0 /path/to/existing/bc.key 260"
+    echo "Example: $0 /path/to/existing/bc.key"
+    echo "Detected BC version: $BC_VERSION_DETECTED"
     exit 1
 fi
 
@@ -40,7 +43,8 @@ echo "   docker cp /home/bcserver/Keys/bc.key bcdevonlinux-bc-1:/home/bcserver/K
 echo "   docker cp /home/bcserver/Keys/Secret.key bcdevonlinux-bc-1:/home/bcserver/Keys/"
 echo "   docker cp /home/bcserver/Keys/BC${BC_VERSION}.key bcdevonlinux-bc-1:/home/bcserver/Keys/"
 echo ""
-echo "2. Also copy to BC service directory inside container:"
+echo "2. Also copy to BC service directory inside container (adjust path for BC27+ if using PFiles64):"
 echo "   docker compose -f compose-wine-custom.yml exec bc cp /home/bcserver/Keys/*.key \"/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV/${BC_VERSION}/Service/\""
+echo "   (or use PFiles64 instead of 'program files' for BC27+)"
 echo ""
 echo "3. If you know the password was encrypted with this key, you can use ProtectedDatabasePassword in the config"

@@ -6,8 +6,12 @@ if [ -f /home/scripts/wine/wine-env.sh ]; then
     source /home/scripts/wine/wine-env.sh >/dev/null 2>&1
 fi
 
+# Dynamically detect BC version
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
+echo "Detected BC version: $BC_VERSION"
+
 # Define config path
-CONFIG_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/CustomSettings.config"
+CONFIG_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service/CustomSettings.config"
 
 echo "BC SQL Configuration Settings"
 echo "============================"
@@ -19,7 +23,7 @@ if [ ! -f "$CONFIG_PATH" ]; then
     echo "  $CONFIG_PATH"
     echo ""
     echo "Checking alternative locations..."
-    
+
     # Check if it exists in home directories
     if [ -f "/home/bcserver/CustomSettings.config" ]; then
         echo "Found config in /home/bcserver/"
@@ -106,7 +110,7 @@ fi
 echo ""
 echo "Encryption Key Check:"
 echo "--------------------"
-KEY_PATH="$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
+KEY_PATH="$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys"
 if [ -d "$KEY_PATH" ]; then
     echo "Keys directory exists. Contents:"
     ls -la "$KEY_PATH" 2>/dev/null | grep -E "\.(key|txt)$" || echo "  No key files found"

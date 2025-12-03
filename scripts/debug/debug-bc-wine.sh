@@ -18,8 +18,16 @@ FILTER_PATTERN=""
 FOLLOW_LOG=false
 VERBOSE=false
 
-# BC Server paths
-BC_SERVER_PATH="/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV/260/Service"
+# Dynamically detect BC version and get program files directory
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
+
+# BC Server path (handles both "program files" and "PFiles64" naming)
+BC_PROGRAM_FILES_DIR=$(/home/scripts/bc/get-artifact-program-files-dir.sh "/home/bcartifacts/platform" 2>/dev/null)
+if [ $? -ne 0 ]; then
+    # Fallback to old logic if helper fails
+    BC_PROGRAM_FILES_DIR="/home/bcartifacts/platform/ServiceTier/program files"
+fi
+BC_SERVER_PATH="$BC_PROGRAM_FILES_DIR/Microsoft Dynamics NAV/$BC_VERSION/Service"
 BC_SERVER_EXE="Microsoft.Dynamics.Nav.Server.exe"
 
 # Usage function
@@ -50,19 +58,19 @@ OPTIONS:
                                 dll       - DLL operations
                                 environ   - Environment variables
                                 +all      - Enable all channels (warning: huge logs)
-                                
+
     -t, --timeout SECONDS     Timeout in seconds (default: $TIMEOUT_SECONDS)
                               Use 0 for no timeout
-    
+
     -f, --filter PATTERN      Filter output for specific pattern
                               Examples: "CustomSettings", "\.key", "sql"
-    
+
     -l, --log-dir DIR         Log directory (default: $LOG_DIR)
-    
+
     -F, --follow              Follow log output in real-time
-    
+
     -v, --verbose             Show verbose output
-    
+
     -h, --help                Show this help message
 
 PREDEFINED CHANNEL SETS:
@@ -75,16 +83,16 @@ PREDEFINED CHANNEL SETS:
 EXAMPLES:
     # Debug file access
     $0 -c file -f CustomSettings
-    
+
     # Debug SQL connection issues
     $0 --sql -t 60
-    
+
     # Debug configuration loading
     $0 --config -F
-    
+
     # Debug with multiple channels and filter
     $0 -c file,reg,odbc -f "config\|key\|sql" -F
-    
+
     # Full debug with no timeout
     $0 --full -t 0 -v
 
@@ -132,7 +140,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --keys)
             CHANNELS="file,reg"
-            FILTER_PATTERN="${FILTER_PATTERN:+$FILTER_PATTERN\|}key\|encryption\|Secret\|BC260"
+            FILTER_PATTERN="${FILTER_PATTERN:+$FILTER_PATTERN\|}key\|encryption\|Secret\|BC${BC_VERSION}"
             shift
             ;;
         --full)

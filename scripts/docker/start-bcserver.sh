@@ -38,8 +38,12 @@ export WINEARCH=win64
 export DISPLAY=":0"
 export WINE_SKIP_GECKO_INSTALLATION=1
 export WINE_SKIP_MONO_INSTALLATION=1
-#export WINEDEBUG="-all"
-export WINEDEBUG="+http,+winhttp,+httpapi,+advapi,-thread,-combase,-ntdll"  # debugging
+# Wine debug settings - respect VERBOSE_LOGGING
+if [ "$VERBOSE_LOGGING" = "true" ] || [ "$VERBOSE_LOGGING" = "1" ]; then
+    export WINEDEBUG="${WINEDEBUG:-+http,+winhttp,+httpapi,+advapi,-thread,-combase,-ntdll}"
+else
+    export WINEDEBUG="${WINEDEBUG:--all}"
+fi
 
 # Standard locale settings (no special workarounds needed with custom Wine)
 export LANG=en_US.UTF-8
@@ -71,8 +75,12 @@ echo "✓ Wine prefix: $WINEPREFIX (pre-initialized in base image)"
 echo "✓ .NET 8 components: pre-installed at build time"
 echo "STATUS: Wine and .NET verified from base image" >> "$STATUS_FILE"
 
+# Dynamically detect BC version from artifacts
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
+echo "Detected BC version: $BC_VERSION"
+
 # BC Server path in standard Wine Program Files location
-BCSERVER_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.exe"
+BCSERVER_PATH="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service/Microsoft.Dynamics.Nav.Server.exe"
 if [ ! -f "$BCSERVER_PATH" ]; then
     echo "BC Server not found in Wine prefix, installing from MSI..."
     echo "STATUS: Installing BC Server from MSI..." >> "$STATUS_FILE"
@@ -93,12 +101,12 @@ if [ ! -f "$BCSERVER_PATH" ]; then
     fi
 
     # Also verify critical runtime files exist
-    if [ ! -f "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.deps.json" ]; then
+    if [ ! -f "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service/Microsoft.Dynamics.Nav.Server.deps.json" ]; then
         echo "ERROR: deps.json file missing after installation"
         exit 1
     fi
 
-    if [ ! -f "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/Microsoft.Dynamics.Nav.Server.runtimeconfig.json" ]; then
+    if [ ! -f "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service/Microsoft.Dynamics.Nav.Server.runtimeconfig.json" ]; then
         echo "ERROR: runtimeconfig.json file missing after installation"
         exit 1
     fi
@@ -117,7 +125,7 @@ echo "This runs on every container start to ensure correct settings"
 echo "========================================="
 
 BCSERVER_DIR=$(dirname "$BCSERVER_PATH")
-mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
+mkdir -p "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys"
 
 # FORCE OVERWRITE the config file - this is critical!
 # Note: /home/bcserver/ was a legacy location, now removed
@@ -143,10 +151,10 @@ echo ""
 if [ -f "/home/config/secret.key" ]; then
     echo "✓ Using RSA key from /home/config/secret.key"
     # Copy to all required locations in Wine prefix
-    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BusinessCentral260.key"
-    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/BC.key"
-    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/DynamicsNAV90.key"
-    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys/bc.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys/BusinessCentral${BC_VERSION}.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys/BC.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys/DynamicsNAV90.key"
+    cp "/home/config/secret.key" "$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys/bc.key"
 
     echo "✓ RSA encryption keys copied to all required locations"
 else
@@ -180,7 +188,7 @@ echo "BC Server started with PID $BC_PID"
 echo "Waiting for BC Server to initialize..."
 
 # Monitor log for readiness message
-timeout=180  # 3 minutes timeout
+timeout=600  # 10 minutes timeout
 elapsed=0
 while [ $elapsed -lt $timeout ]; do
     if grep -q "Press Enter to stop the console server" /var/log/bc-server.log; then

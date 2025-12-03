@@ -9,7 +9,8 @@ export DISPLAY=":0"
 export DOTNET_ROOT="C:\\Program Files\\dotnet"
 
 # Helpful aliases
-alias cdbc='cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service"'
+# Dynamic cdbc alias that detects BC version
+alias cdbc='BC_VER=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260"); cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VER/Service"'
 alias bclog='tail -f /home/bc-init-status.txt 2>/dev/null || echo "No initialization log found"'
 alias bcstatus='/home/tests/check-bc-status.sh'
 
