@@ -14,4 +14,4 @@ echo "Detected BC version: $BC_VERSION"
 cd "$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service"
 
 echo "Starting BC Server..."
-wine Microsoft.Dynamics.Nav.Server.exe '\$BusinessCentral'"$BC_VERSION" /config Microsoft.Dynamics.Nav.Server.dll.config /console
+wine Microsoft.Dynamics.Nav.Server.exe '$BusinessCentral'"$BC_VERSION" /config Microsoft.Dynamics.Nav.Server.dll.config /console
