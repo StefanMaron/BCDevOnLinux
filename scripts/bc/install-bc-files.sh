@@ -14,29 +14,15 @@ fi
 
 echo "Detected BC version: $BC_VERSION"
 
-# BC artifacts directory structure changed in BC27:
-# BC26 and earlier: ServiceTier/program files/Microsoft Dynamics NAV/260/Service
-# BC27 and later:   ServiceTier/PFiles64/Microsoft Dynamics NAV/270/Service
-# Try to find the correct path using pattern matching
-BC_ARTIFACTS_BASE="/home/bcartifacts/ServiceTier"
-BC_ARTIFACTS=""
-
-for program_files_dir in "PFiles64" "program files"; do
-    CANDIDATE="$BC_ARTIFACTS_BASE/$program_files_dir/Microsoft Dynamics NAV/$BC_VERSION/Service"
-    if [ -d "$CANDIDATE" ]; then
-        BC_ARTIFACTS="$CANDIDATE"
-        echo "Found BC artifacts in: $program_files_dir"
-        break
-    fi
-done
-
-if [ -z "$BC_ARTIFACTS" ]; then
-    echo "ERROR: BC artifacts not found for version $BC_VERSION"
-    echo "Searched in:"
-    echo "  $BC_ARTIFACTS_BASE/PFiles64/Microsoft Dynamics NAV/$BC_VERSION/Service"
-    echo "  $BC_ARTIFACTS_BASE/program files/Microsoft Dynamics NAV/$BC_VERSION/Service"
+# Get BC artifact program files directory (handles both "program files" and "PFiles64" naming)
+BC_PROGRAM_FILES_DIR=$(/home/scripts/bc/get-artifact-program-files-dir.sh)
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to locate BC artifact program files directory"
     exit 1
 fi
+
+BC_ARTIFACTS="$BC_PROGRAM_FILES_DIR/Microsoft Dynamics NAV/$BC_VERSION/Service"
+echo "Using BC artifacts from: $BC_ARTIFACTS"
 
 WINE_BC_DIR="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service"
 

@@ -18,11 +18,16 @@ FILTER_PATTERN=""
 FOLLOW_LOG=false
 VERBOSE=false
 
-# Dynamically detect BC version
-BC_VERSION=$(find "/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1 | xargs basename 2>/dev/null || echo "260")
+# Dynamically detect BC version and get program files directory
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
 
-# BC Server paths
-BC_SERVER_PATH="/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV/$BC_VERSION/Service"
+# BC Server path (handles both "program files" and "PFiles64" naming)
+BC_PROGRAM_FILES_DIR=$(/home/scripts/bc/get-artifact-program-files-dir.sh "/home/bcartifacts/platform" 2>/dev/null)
+if [ $? -ne 0 ]; then
+    # Fallback to old logic if helper fails
+    BC_PROGRAM_FILES_DIR="/home/bcartifacts/platform/ServiceTier/program files"
+fi
+BC_SERVER_PATH="$BC_PROGRAM_FILES_DIR/Microsoft Dynamics NAV/$BC_VERSION/Service"
 BC_SERVER_EXE="Microsoft.Dynamics.Nav.Server.exe"
 
 # Usage function
