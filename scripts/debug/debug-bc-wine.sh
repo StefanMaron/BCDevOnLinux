@@ -18,8 +18,11 @@ FILTER_PATTERN=""
 FOLLOW_LOG=false
 VERBOSE=false
 
+# Dynamically detect BC version
+BC_VERSION=$(find "/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1 | xargs basename 2>/dev/null || echo "260")
+
 # BC Server paths
-BC_SERVER_PATH="/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV/260/Service"
+BC_SERVER_PATH="/home/bcartifacts/platform/ServiceTier/program files/Microsoft Dynamics NAV/$BC_VERSION/Service"
 BC_SERVER_EXE="Microsoft.Dynamics.Nav.Server.exe"
 
 # Usage function
@@ -50,19 +53,19 @@ OPTIONS:
                                 dll       - DLL operations
                                 environ   - Environment variables
                                 +all      - Enable all channels (warning: huge logs)
-                                
+
     -t, --timeout SECONDS     Timeout in seconds (default: $TIMEOUT_SECONDS)
                               Use 0 for no timeout
-    
+
     -f, --filter PATTERN      Filter output for specific pattern
                               Examples: "CustomSettings", "\.key", "sql"
-    
+
     -l, --log-dir DIR         Log directory (default: $LOG_DIR)
-    
+
     -F, --follow              Follow log output in real-time
-    
+
     -v, --verbose             Show verbose output
-    
+
     -h, --help                Show this help message
 
 PREDEFINED CHANNEL SETS:
@@ -75,16 +78,16 @@ PREDEFINED CHANNEL SETS:
 EXAMPLES:
     # Debug file access
     $0 -c file -f CustomSettings
-    
+
     # Debug SQL connection issues
     $0 --sql -t 60
-    
+
     # Debug configuration loading
     $0 --config -F
-    
+
     # Debug with multiple channels and filter
     $0 -c file,reg,odbc -f "config\|key\|sql" -F
-    
+
     # Full debug with no timeout
     $0 --full -t 0 -v
 
@@ -132,7 +135,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --keys)
             CHANNELS="file,reg"
-            FILTER_PATTERN="${FILTER_PATTERN:+$FILTER_PATTERN\|}key\|encryption\|Secret\|BC260"
+            FILTER_PATTERN="${FILTER_PATTERN:+$FILTER_PATTERN\|}key\|encryption\|Secret\|BC${BC_VERSION}"
             shift
             ;;
         --full)

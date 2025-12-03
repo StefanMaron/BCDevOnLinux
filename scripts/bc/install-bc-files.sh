@@ -4,8 +4,41 @@ set -e
 echo "Installing BC Server by copying files (MSI alternative)..."
 
 export WINEPREFIX="$HOME/.local/share/wineprefixes/bc1"
-WINE_BC_DIR="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service"
-BC_ARTIFACTS="/home/bcartifacts/ServiceTier/program files/Microsoft Dynamics NAV/260/Service"
+
+# Dynamically detect BC version from artifacts
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh)
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to detect BC version"
+    exit 1
+fi
+
+echo "Detected BC version: $BC_VERSION"
+
+# BC artifacts directory structure changed in BC27:
+# BC26 and earlier: ServiceTier/program files/Microsoft Dynamics NAV/260/Service
+# BC27 and later:   ServiceTier/PFiles64/Microsoft Dynamics NAV/270/Service
+# Try to find the correct path using pattern matching
+BC_ARTIFACTS_BASE="/home/bcartifacts/ServiceTier"
+BC_ARTIFACTS=""
+
+for program_files_dir in "PFiles64" "program files"; do
+    CANDIDATE="$BC_ARTIFACTS_BASE/$program_files_dir/Microsoft Dynamics NAV/$BC_VERSION/Service"
+    if [ -d "$CANDIDATE" ]; then
+        BC_ARTIFACTS="$CANDIDATE"
+        echo "Found BC artifacts in: $program_files_dir"
+        break
+    fi
+done
+
+if [ -z "$BC_ARTIFACTS" ]; then
+    echo "ERROR: BC artifacts not found for version $BC_VERSION"
+    echo "Searched in:"
+    echo "  $BC_ARTIFACTS_BASE/PFiles64/Microsoft Dynamics NAV/$BC_VERSION/Service"
+    echo "  $BC_ARTIFACTS_BASE/program files/Microsoft Dynamics NAV/$BC_VERSION/Service"
+    exit 1
+fi
+
+WINE_BC_DIR="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service"
 
 # Check if already installed with all required files
 if [ -f "$WINE_BC_DIR/Microsoft.Dynamics.Nav.Server.exe" ] && \
@@ -66,12 +99,12 @@ if [ -f "/home/CustomSettings.config" ]; then
 fi
 
 # Install encryption keys
-KEY_DIR="$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/Keys"
+KEY_DIR="$WINEPREFIX/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/$BC_VERSION/Server/Keys"
 mkdir -p "$KEY_DIR"
 if [ -f "/home/config/secret.key" ]; then
     cp "/home/config/secret.key" "$KEY_DIR/bc.key"
     cp "/home/config/secret.key" "$KEY_DIR/BC.key"
-    cp "/home/config/secret.key" "$KEY_DIR/BusinessCentral260.key"
+    cp "/home/config/secret.key" "$KEY_DIR/BusinessCentral${BC_VERSION}.key"
     cp "/home/config/secret.key" "$KEY_DIR/DynamicsNAV90.key"
     echo "Encryption keys installed"
 fi

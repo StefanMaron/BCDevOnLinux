@@ -3,12 +3,15 @@
 
 set -e
 
+# Dynamically detect BC version, allow override as parameter
+BC_VERSION_DETECTED=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
 KEY_SOURCE="$1"
-BC_VERSION="${2:-260}"  # Default to BC 260
+BC_VERSION="${2:-$BC_VERSION_DETECTED}"  # Use detected version as default
 
 if [ -z "$KEY_SOURCE" ]; then
     echo "Usage: $0 <path-to-existing-key-file> [bc-version]"
-    echo "Example: $0 /path/to/existing/bc.key 260"
+    echo "Example: $0 /path/to/existing/bc.key"
+    echo "Detected BC version: $BC_VERSION_DETECTED"
     exit 1
 fi
 

@@ -12,7 +12,7 @@ echo ""
 
 # Test 1: Configuration file access
 echo -e "${YELLOW}Test 1: Checking configuration file access...${NC}"
-./debug-bc-wine.sh --config -t 15 -f "CustomSettings\|\.config" 
+./debug-bc-wine.sh --config -t 15 -f "CustomSettings\|\.config"
 sleep 5
 echo ""
 
@@ -37,10 +37,10 @@ echo -e "${GREEN}Analyzing key access:${NC}"
 LOG_FILE=$(docker exec bcdevonlinux-bc-1 ls -t /home/bc-debug-logs/bc-wine-debug_*.log 2>/dev/null | head -1)
 if [[ -n "$LOG_FILE" ]]; then
     echo "Key file searches:"
-    docker exec bcdevonlinux-bc-1 grep -iE "\.key|secret|BC260" "$LOG_FILE" | wc -l
+    docker exec bcdevonlinux-bc-1 grep -iE "\.key|secret|BC[0-9]+" "$LOG_FILE" | wc -l
     echo ""
     echo "Sample key searches:"
-    docker exec bcdevonlinux-bc-1 grep -iE "\.key|secret|BC260" "$LOG_FILE" | head -5
+    docker exec bcdevonlinux-bc-1 grep -iE "\.key|secret|BC[0-9]+" "$LOG_FILE" | head -5
 fi
 
 echo ""

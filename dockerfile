@@ -30,13 +30,6 @@ COPY scripts/bc/run-bc-simple.sh /home/run-bc.sh
 # Note: BC Server will be installed via MSI at runtime, not copied here
 # The MSI installation will create the proper directory structure and registry entries
 
-# Prepare encryption keys for later installation
-RUN mkdir -p /home/config/Keys && \
-    cp /home/config/secret.key /home/config/Keys/secret.key && \
-    cp /home/config/secret.key /home/config/Keys/bc.key && \
-    cp /home/config/secret.key /home/config/Keys/BusinessCentral260.key && \
-    cp /home/config/secret.key /home/config/Keys/DynamicsNAV90.key
-
 RUN find /home/scripts -name "*.sh" -exec chmod +x {} \; && \
     find /home/tests -name "*.sh" -exec chmod +x {} \; && \
     chmod +x /home/run-bc-console.sh /home/run-bc.sh

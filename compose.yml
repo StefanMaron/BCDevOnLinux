@@ -15,12 +15,14 @@ services:
       - SQL_SERVER_PORT=1433
       - BC_AUTOSTART=true
       - BC_ARTIFACT_URL=${BC_ARTIFACT_URL}
-      - BC_VERSION=${BC_VERSION}
-      - BC_COUNTRY=${BC_COUNTRY}
-      - BC_TYPE=${BC_TYPE}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - DATABASE_NAME=${DATABASE_NAME}
-      - WINEDEBUG=-all
+      - BC_VERSION=${BC_VERSION:-}
+      - BC_COUNTRY=${BC_COUNTRY:-}
+      - BC_TYPE=${BC_TYPE:-}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - DATABASE_NAME=${DATABASE_NAME:-}
+      - VERBOSE_LOGGING=${VERBOSE_LOGGING:-}
+      - WINEDEBUG=${WINEDEBUG:-}
     ports:
       - "7045:7045"  # BC Management Services
       - "7046:7046"  # BC Client Services
@@ -37,7 +39,9 @@ services:
       # Wine Temp directory - used during BC startup for temporary operations
       - /root/.local/share/wineprefixes/bc1/drive_c/users/root/AppData/Local/Temp:size=512M,mode=1777,exec
       # BC metadata cache in RAM - critical for fast cache generation (metadata + assemblies)
-      - /root/.local/share/wineprefixes/bc1/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV/260/Server/MicrosoftDynamicsNavServer$$BC:size=1G,mode=1777,exec
+      # Note: This includes the entire NAV directory tree (all versions + Keys subdirs)
+      # Keys are repopulated on each container start from /home/config/secret.key
+      - /root/.local/share/wineprefixes/bc1/drive_c/ProgramData/Microsoft/Microsoft Dynamics NAV:size=1G,mode=1777,exec
     networks:
       - bc-network
     restart: unless-stopped
@@ -45,7 +49,7 @@ services:
       test: ["CMD-SHELL", "pgrep -f 'Microsoft.Dynamics.Nav.Server.exe' && netstat -tln | grep -q ':7048' || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
       start_period: 180s  # Reduced from 300s due to base image optimizations
 
   sql:

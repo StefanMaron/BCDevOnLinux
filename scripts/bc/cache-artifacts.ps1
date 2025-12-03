@@ -10,6 +10,10 @@ param(
     [string]$PreDownloadedPath = "/home/bchost-cache"
 )
 
+# Check if verbose logging is enabled
+$verboseLogging = $env:VERBOSE_LOGGING -eq "true" -or $env:VERBOSE_LOGGING -eq "1"
+$curlProgressFlag = if ($verboseLogging) { "--progress-bar" } else { "--silent --show-error" }
+
 Write-Host "Checking BC artifact cache..." -ForegroundColor Cyan
 
 # Check if artifacts already exist in destination (already cached)
@@ -75,7 +79,7 @@ if (Test-Path $PreDownloadedPath) {
 Write-Host "No cached artifacts found, downloading..." -ForegroundColor Yellow
 
 # Get artifact URL based on environment variables
-Import-Module BcContainerHelper
+Import-Module BcContainerHelper -DisableNameChecking
 
 $artifactUrl = $env:BC_ARTIFACT_URL
 
@@ -116,7 +120,7 @@ try {
     # Download platform artifact (base layer) - using curl for maximum speed on Linux
     Write-Host "  Downloading platform artifact..." -ForegroundColor Cyan
     $platformZip = Join-Path ([System.IO.Path]::GetTempPath()) "platform-$([Guid]::NewGuid().ToString()).zip"
-    curl -L -o $platformZip "$platformUrl" --max-time 600 --progress-bar
+    Invoke-Expression "curl -L -o `$platformZip `"$platformUrl`" --max-time 600 $curlProgressFlag"
     Write-Host "  Extracting platform to $DestinationPath..." -ForegroundColor Cyan
     7z x $platformZip -o"$DestinationPath" -y | Out-Null
     Remove-Item $platformZip -Force
@@ -124,7 +128,7 @@ try {
     # Download application artifact (overlay)
     Write-Host "  Downloading application artifact..." -ForegroundColor Cyan
     $appZip = Join-Path ([System.IO.Path]::GetTempPath()) "app-$([Guid]::NewGuid().ToString()).zip"
-    curl -L -o $appZip "$artifactUrl" --max-time 600 --progress-bar
+    Invoke-Expression "curl -L -o `$appZip `"$artifactUrl`" --max-time 600 $curlProgressFlag"
     Write-Host "  Extracting application to $DestinationPath..." -ForegroundColor Cyan
     7z x $appZip -o"$DestinationPath" -aoa | Out-Null
     Remove-Item $appZip -Force

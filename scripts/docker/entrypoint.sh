@@ -15,8 +15,10 @@ echo "  BC_ARTIFACT_URL: ${BC_ARTIFACT_URL:-(not set)}"
 echo "  BC_VERSION: ${BC_VERSION:-(not set)}"
 echo "  BC_COUNTRY: ${BC_COUNTRY:-(not set)}"
 echo "  BC_TYPE: ${BC_TYPE:-(not set)}"
+echo "  ADMIN_USERNAME: ${ADMIN_USERNAME:-(not set)}"
 echo "  ADMIN_PASSWORD: $(if [ -n "$ADMIN_PASSWORD" ]; then echo '***set***'; else echo '(not set)'; fi)"
 echo "  DATABASE_NAME: ${DATABASE_NAME:-(not set)}"
+echo "  VERBOSE_LOGGING: ${VERBOSE_LOGGING:-(not set)}"
 echo "  WINEDEBUG: ${WINEDEBUG:-(not set)}"
 echo "=================================================="
 echo ""
@@ -65,6 +67,7 @@ fi
 # Create default admin user on first run
 if [ ! -f "/home/.admin-user-created" ] && command -v sqlcmd >/dev/null 2>&1; then
     echo "Creating default admin user..."
+    ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
     ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
 
     # Wait for SQL Server to be ready
@@ -78,10 +81,10 @@ if [ ! -f "/home/.admin-user-created" ] && command -v sqlcmd >/dev/null 2>&1; th
     done
 
     # Create admin user using our SQL script
-    if /home/scripts/bc/create-bc-user.sh admin "${ADMIN_PASSWORD}" SUPER 2>&1; then
+    if /home/scripts/bc/create-bc-user.sh "${ADMIN_USERNAME}" "${ADMIN_PASSWORD}" SUPER 2>&1; then
         echo "✅ Default admin user created successfully"
-        echo "   Username: admin"
-        echo "   Password: ${ADMIN_PASSWORD}"
+        echo "   Username: ${ADMIN_USERNAME}"
+        echo "   Password: ***masked***"
         echo "   Permission Set: SUPER"
         touch /home/.admin-user-created
     else

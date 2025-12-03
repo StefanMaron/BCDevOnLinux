@@ -9,9 +9,14 @@ fi
 echo "=== BC Configuration Debug ==="
 echo ""
 
+# Dynamically detect BC version
+BC_VERSION=$(/home/scripts/bc/detect-bc-version.sh 2>/dev/null || echo "260")
+echo "Detected BC version: $BC_VERSION"
+echo ""
+
 # Check all possible config locations
 echo "1. Checking Wine prefix location:"
-WINE_CONFIG="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/260/Service/CustomSettings.config"
+WINE_CONFIG="$WINEPREFIX/drive_c/Program Files/Microsoft Dynamics NAV/$BC_VERSION/Service/CustomSettings.config"
 if [ -f "$WINE_CONFIG" ]; then
     echo "   Found at: $WINE_CONFIG"
     echo "   Size: $(stat -c%s "$WINE_CONFIG") bytes"

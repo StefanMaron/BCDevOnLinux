@@ -20,14 +20,14 @@ get_artifact_url() {
     local version=$2
     local country=$3
     local select=$4
-    
+
     pwsh -Command "
         if (-not (Get-Module -ListAvailable -Name BcContainerHelper)) {
             Write-Host 'Installing BcContainerHelper module...'
             Install-Module -Name BcContainerHelper -Force -Scope CurrentUser
         }
-        Import-Module BcContainerHelper -Force
-        
+        Import-Module BcContainerHelper -Force -DisableNameChecking
+
         try {
             if ('$select' -eq 'latest') {
                 \$url = Get-BcArtifactUrl -type '$type' -country '$country' -select Latest
@@ -83,7 +83,7 @@ case $choice in
             if (-not (Get-Module -ListAvailable -Name BcContainerHelper)) {
                 Install-Module -Name BcContainerHelper -Force -Scope CurrentUser
             }
-            Import-Module BcContainerHelper -Force
+            Import-Module BcContainerHelper -Force -DisableNameChecking
             $custom_command
         ")
         ;;
@@ -109,9 +109,9 @@ if [ -n "$url" ] && [ "$url" != "" ]; then
     echo "   BC_ARTIFACT_URL=$url"
     echo "3. Run: docker-compose up --build"
     echo
-    
+
     read -p "Would you like to create/update the .env file automatically? (y/n): " create_env
-    
+
     if [ "$create_env" = "y" ] || [ "$create_env" = "Y" ]; then
         if [ -f ".env" ]; then
             # Update existing .env file

@@ -171,7 +171,7 @@ if [[ "$SHOW_KEYS" == true ]]; then
     echo -e "${GREEN}=== Encryption Key Analysis ===${NC}"
     
     echo "Key file access attempts:"
-    docker exec bcdevonlinux-bc-1 bash -c "grep -iE '\.key|secret|encryption|BC260|Keys' '$LOG_FILE' | grep -E 'file:|reg:' | head -20"
+    docker exec bcdevonlinux-bc-1 bash -c "grep -iE '\.key|secret|encryption|BC[0-9]+|Keys' '\$LOG_FILE' | grep -E 'file:|reg:' | head -20"
     
     echo ""
     echo "ProgramData key locations:"
